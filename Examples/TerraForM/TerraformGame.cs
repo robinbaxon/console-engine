@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using ConsoleEngine;
 using ConsoleEngine.Abstractions.Inputs;
 using ConsoleEngine.Infrastructure.Inputs;
@@ -70,7 +69,7 @@ namespace TerraForM
             Score = 0;
             Camera.Position = Vector2.Zero;
             World = WorldLoader.LoadWorld(this, Maps[CurrentMap]);
-            Rover = new Rover(this)
+            Rover = new Rover(this) 
             {
                 Position = World.StartingPoint.Position,
                 Velocity = Vector2.Zero
@@ -175,13 +174,11 @@ namespace TerraForM
         public void RotateMap()
         {
             CurrentMap++;
-            if (CurrentMap >= Maps.Length)
-            {
+            if (CurrentMap >= Maps.Length) {
                 CurrentMap = 0;
             }
 
             StartNewGame();
-
         }
     }
 }

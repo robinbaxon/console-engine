@@ -14,6 +14,7 @@ namespace TerraForM
         //**********************************************************
         //** constants
         //**********************************************************
+        
         private readonly TerraformGame _game;
         private const int ScoreHeight = 0;
         private const int Top = 35;
@@ -117,6 +118,7 @@ namespace TerraForM
 
         private void DrawAcceleratorsPlanted()
             => DrawText($"{HudTexts.AtmosphereGeneratorsPlanted}: {_game.Rover.AthmosphereGeneratorsPlanted}", AcceleratorsPlantedHeight, 1,ConsoleColor.Blue);
+       
         private void DrawGameOver()
             => _game.Console.Draw(
                 x: (int)_game.Console.ScreenCenter.X - (Sprites.GameOver.Width / 2),
