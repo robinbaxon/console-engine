@@ -125,6 +125,7 @@ namespace TerraForM.Scenes
 
         public override void OnRender()
         {
+            World.Draw();
             _plantEmitters.ForEach(e => e.Draw());
             Rover.Draw();
             Hud.Draw();
