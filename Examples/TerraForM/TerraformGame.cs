@@ -44,10 +44,10 @@ namespace TerraForM
         public void RotateMap()
         {
             CurrentMap++;
-            if (CurrentMap >= Maps.Length)
-            {
+            if (CurrentMap >= Maps.Length) {
                 CurrentMap = 0;
             }
+            Scenes.Set(new GameScene($"map{CurrentMap}"));
         }
         
         protected override void OnInitialize()

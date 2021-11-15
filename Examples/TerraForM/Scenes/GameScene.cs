@@ -148,19 +148,18 @@ namespace TerraForM.Scenes
         //** event handlers:
         //**********************************************************
         
-        private void RoverOnOnAthmosphereGeneratorsPlanted(object? sender, EventArgs e)
+        private void RoverOnOnAthmosphereGeneratorsPlanted(object sender, EventArgs e)
         {
             PlantEmitters.Add(new PlantEmitter(this) {
                 Position = Rover.Position
             });
         }
 
-        private void RoverOnOnFinishReached(object? sender, EventArgs e)
+        private void RoverOnOnFinishReached(object sender, EventArgs e)
         {
             Game.Score += (int)Rover.RemainingPower - (Rover.DamageTaken);
             Game.Score += (Rover.AthmosphereGeneratorsPlanted * 10000);
             Game.RotateMap();
-            Game.Scenes.Set(new GameScene($"map{Game.CurrentMap}"));
         }
     }
 }
