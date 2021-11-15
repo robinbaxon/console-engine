@@ -42,18 +42,16 @@ namespace TerraForM.Scenes
         public override void OnRender()
         {
             var sprite = Sprites.InputName;
+            Game.Console.Draw(3, 5, sprite);
             
             if (_nameBuilder.Length > 0)
             {
-                sprite.Draw(
+                Game.Console.Draw(
                     sprite.Width / 2 - (_nameBuilder.Length/2), 
-                    27,  
+                    32,  
                     _nameBuilder.ToString(), 
-                    ConsoleColor.Red, 
-                    ConsoleColor.Black);
+                    ConsoleColor.Red);
             }
-            
-            Game.Console.Draw(3, 5, sprite); 
         }
     }
 }
