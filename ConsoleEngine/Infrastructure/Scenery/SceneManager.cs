@@ -12,7 +12,8 @@ namespace ConsoleEngine.Infrastructure.Scenery
 
         private readonly GameBase _game;
         private readonly Stack<Scene> _scenes = new();
-              
+        private readonly Queue<Scene> _unloadScenes = new();
+
         //**********************************************************
         //** ctor:
         //**********************************************************
@@ -31,20 +32,7 @@ namespace ConsoleEngine.Infrastructure.Scenery
         //**********************************************************
         //** public methods:
         //**********************************************************
-
-        /// <summary> Reloads current scene </summary>
-        public void Reload()
-        {
-            var current = Pop();
-            if (current == null)
-                throw new InvalidOperationException("No active scenes");
-            
-            var type = current.GetType();
-            current.Unload();
-            var instance = (Scene)Activator.CreateInstance(type);
-            Push(instance);
-        }
-        
+ 
         /// <summary>Unloads current stack and sets the new scene as the current one</summary>
         /// <typeparam name="T">The new scene</typeparam>
         public T Set<T>() where T : Scene, new()
@@ -61,10 +49,8 @@ namespace ConsoleEngine.Infrastructure.Scenery
         public void Set(Scene scene)
         {
             while (_scenes.Any())
-            {
-                var toRemove = _scenes.Pop();
-                toRemove.OnUnload(); 
-            }
+                _unloadScenes.Enqueue(_scenes.Pop());
+
             GC.Collect();
 
             Push(scene);
@@ -111,7 +97,7 @@ namespace ConsoleEngine.Infrastructure.Scenery
             if (!_scenes.TryPop(out var old))
                 return null;
             
-            old.Unload();
+            _unloadScenes.Enqueue(old);
             
             if (_scenes.TryPeek(out var @new))
                 @new.Unpause();
@@ -154,6 +140,14 @@ namespace ConsoleEngine.Infrastructure.Scenery
             if (_scenes.TryPeek(out var current))
                 current.Render();
         }
-        
+
+        internal void Cleanup()
+        {
+            while (_unloadScenes.Any())
+            {
+                var sceneToUnload = _unloadScenes.Dequeue();
+                sceneToUnload.Unload();
+            }
+        }
     }
 }

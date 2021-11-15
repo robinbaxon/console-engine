@@ -96,6 +96,8 @@ namespace ConsoleEngine
                 OnRender();
                 
                 _console.Display();
+                
+                Scenes.Cleanup();
             }
         }
         

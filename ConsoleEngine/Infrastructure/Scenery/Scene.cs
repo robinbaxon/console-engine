@@ -1,10 +1,11 @@
 ﻿using System;
+using ConsoleEngine.Infrastructure.Rendering;
 
 namespace ConsoleEngine.Infrastructure.Scenery
 {
     public abstract class Scene<TGame> : Scene where TGame : GameBase
     {
-        protected new TGame Game => (TGame)base.Game;
+        public new TGame Game => (TGame)base.Game;
     }
     
     public abstract class Scene
@@ -15,6 +16,7 @@ namespace ConsoleEngine.Infrastructure.Scenery
 
         public bool IsPaused { get; private set; }
         public GameBase Game { get; internal set; }
+        public RenderConsole Console => Game.Console;
       
         //**********************************************************
         //** abstract:

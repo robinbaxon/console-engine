@@ -19,7 +19,6 @@ namespace TerraForM.Scenes
         private const string MapAssetPath = "Assets/Maps";
         private readonly string _worldName;
         private readonly Queue<Command> _currentCommands = new();
-        private readonly List<PlantEmitter> _plantEmitters = new();
               
         //**********************************************************
         //** ctor
@@ -27,43 +26,45 @@ namespace TerraForM.Scenes
         
         public GameScene(string worldName)
         {
-            if (worldName == null) throw new ArgumentNullException(nameof(worldName));
-            _worldName = worldName;
+            _worldName = worldName ?? throw new ArgumentNullException(nameof(worldName));
         }
               
         //**********************************************************
         //** props:
         //**********************************************************
 
-        public World World { get; private set; }
+        public virtual World World { get; private set; }
         public Rover Rover { get; private set; }
         public Hud Hud { get; private set; }
-        public Camera Camera { get; private set; }
         public bool GameOver { get; set; }
-      
+        public List<PlantEmitter> PlantEmitters { get; } = new();
+
         //**********************************************************
         //** public methods:
         //**********************************************************
         
         public override void OnLoad()
         {
-            Camera = new Camera(Game);
+            Game.Camera.Position = Vector2.Zero;
             World = WorldLoader.LoadWorld(Game, $"{MapAssetPath}/{_worldName}.txt");
-            Rover = new Rover(Game)
-            {
+            Rover = new Rover(this) {
                 Position = World.StartingPoint.Position,
                 Velocity = Vector2.Zero
             };
-            Hud = new Hud(Game);
-            Camera.Follow(Rover);
+            Rover.OnFinishReached += RoverOnOnFinishReached;
+            Rover.OnAthmosphereGeneratorsPlanted += RoverOnOnAthmosphereGeneratorsPlanted;
+            Hud = new Hud(this);
+            Game.Camera.Follow(Rover);
         }
 
         public override void OnUnload()
         {
             World = null;
+            Rover.OnFinishReached -= RoverOnOnFinishReached;
+            Rover.OnAthmosphereGeneratorsPlanted -= RoverOnOnAthmosphereGeneratorsPlanted;
             Rover = null;
             _currentCommands.Clear();
-            _plantEmitters.Clear();
+            PlantEmitters.Clear();
         }
 
         public override void OnUpdate()
@@ -77,17 +78,16 @@ namespace TerraForM.Scenes
 
             HandleDebugInput();
 
-            if (Input.Instance.GetKey(Key.R).Pressed) 
-                Game.Scenes.Reload();
-            
             if (Input.Instance.GetKey(Key.SPACE).Pressed && !_currentCommands.Any()) 
                 CommitCommands();
             
             UpdateCurrentCommand();
             
             Rover.Update();
-            _plantEmitters.ForEach(e => e.Update());
-            Camera.Update();
+            PlantEmitters.ForEach(e => e.Update());
+            
+            if (Input.Instance.GetKey(Key.R).Pressed) 
+                Game.Scenes.Set(new GameScene(_worldName));                
         }
         
         private void HandleDebugInput()
@@ -126,7 +126,7 @@ namespace TerraForM.Scenes
         public override void OnRender()
         {
             World.Draw();
-            _plantEmitters.ForEach(e => e.Draw());
+            PlantEmitters.ForEach(e => e.Draw());
             Rover.Draw();
             Hud.Draw();
             
@@ -141,6 +141,26 @@ namespace TerraForM.Scenes
             Game.Console.Draw(0, 0, $"Pos  : {Rover.Position}");
             Game.Console.Draw(0, 1, $"SPos : {Rover.GetScreenPos()}");
             Game.Console.Draw(0, 2, $"BB   : {Rover.BoundingBox}");
+        }
+        
+              
+        //**********************************************************
+        //** event handlers:
+        //**********************************************************
+        
+        private void RoverOnOnAthmosphereGeneratorsPlanted(object? sender, EventArgs e)
+        {
+            PlantEmitters.Add(new PlantEmitter(this) {
+                Position = Rover.Position
+            });
+        }
+
+        private void RoverOnOnFinishReached(object? sender, EventArgs e)
+        {
+            Game.Score += (int)Rover.RemainingPower - (Rover.DamageTaken);
+            Game.Score += (Rover.AthmosphereGeneratorsPlanted * 10000);
+            Game.RotateMap();
+            Game.Scenes.Set(new GameScene($"map{Game.CurrentMap}"));
         }
     }
 }

@@ -17,7 +17,6 @@ namespace TerraForM
         private readonly int _mapHeight;
         public const int TileSize = 5;
 
-
         public World(){}
         public World(TerraformGame game, string name, MapTile[,] map) {
             _game = game;
@@ -37,7 +36,6 @@ namespace TerraForM
 
         public void Init()
         {
-            
             for (var x = 0; x < Width; x++)
             for (var y = 0; y < Height; y++)
             {
@@ -65,31 +63,34 @@ namespace TerraForM
         
         public void Draw()
         {
-            if (_game.GameState == GameStates.InputName)
-            {
-                var sprite = Sprites.InputName;
-                if (!string.IsNullOrEmpty(_game.Playername))
-                {
-                    sprite.Draw(sprite.Width / 2 - (_game.Playername.Length/2), 27,  _game.Playername, ConsoleColor.Red, ConsoleColor.Black);
-                }
-                _game.Console.Draw(3, 5, sprite); 
-                return;
-            }
-            else if (_game.GameState == GameStates.Menu)
-            {
-                if (!string.IsNullOrEmpty(_game.Playername))
-                {
-                    var sprite = Sprites.Story;
-                    sprite.Draw(32, 22, string.Concat(_game.Playername.Take(30)), ConsoleColor.Red, ConsoleColor.Black);
-                    _game.Console.Draw(3, 5, sprite);    
-                }
-                return;
-            }
+            
+            // if (_game.GameState == GameStates.InputName)
+            // {
+            //     var sprite = Sprites.InputName;
+            //     if (!string.IsNullOrEmpty(_game.Playername))
+            //     {
+            //         sprite.Draw(sprite.Width / 2 - (_game.Playername.Length/2), 27,  _game.Playername, ConsoleColor.Red, ConsoleColor.Black);
+            //     }
+            //     _game.Console.Draw(3, 5, sprite); 
+            //     return;
+            // }
+            // else if (_game.GameState == GameStates.Menu)
+            // {
+            //     if (!string.IsNullOrEmpty(_game.Playername))
+            //     {
+            //         var sprite = Sprites.Story;
+            //         sprite.Draw(32, 22, string.Concat(_game.Playername.Take(30)), ConsoleColor.Red, ConsoleColor.Black);
+            //         _game.Console.Draw(3, 5, sprite);    
+            //     }
+            //     return;
+            // }
+            
             for (var x = 0; x < Width; x++)
             for (var y = 0; y < Height; y++)
             {
                 _tiles[x, y]?.Draw();
             }
+            
             foreach (var border in _border) {
                 border.Draw();
             }

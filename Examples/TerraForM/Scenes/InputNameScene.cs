@@ -33,7 +33,7 @@ namespace TerraForM.Scenes
             
             var pressedSpace09AZkeys = Input.Instance.GetPressedKeyCodesSpace09AZ().Select(kc => (char)kc);
             if (pressedSpace09AZkeys?.Any() == true)
-                _nameBuilder.Append(pressedSpace09AZkeys);
+                _nameBuilder.Append(string.Concat(pressedSpace09AZkeys));
 
             if (Input.Instance.GetKey(Key.BACKSPACE).Pressed && _nameBuilder.Length > 0)
                 _nameBuilder.Length--;
