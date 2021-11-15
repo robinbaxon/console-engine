@@ -29,6 +29,26 @@ namespace ConsoleEngine.Infrastructure.Scenery
 
         public int Count => _scenes.Count;
         
+        public Scene Current
+        {
+            get
+            {
+                _scenes.TryPeek(out var top);
+                return top;
+            }
+        }
+
+        public Scene PreviousScene
+        {
+            get
+            {
+                var current = _scenes.Pop();
+                _scenes.TryPeek(out var top);
+                _scenes.Push(current);
+                return top;
+            }
+        }
+        
         //**********************************************************
         //** public methods:
         //**********************************************************
@@ -51,8 +71,6 @@ namespace ConsoleEngine.Infrastructure.Scenery
             while (_scenes.Any())
                 _unloadScenes.Enqueue(_scenes.Pop());
 
-            GC.Collect();
-
             Push(scene);
         }
 
@@ -64,9 +82,7 @@ namespace ConsoleEngine.Infrastructure.Scenery
         /// <returns>The instantiated and loaded scene</returns>
         public T Push<T>() where T : Scene, new() 
         {
-            var scene = new T() {
-                Game = _game
-            };
+            var scene = new T { Game = _game };
             
             Push(scene);
             
@@ -104,26 +120,6 @@ namespace ConsoleEngine.Infrastructure.Scenery
             
             return old;
         }
-        
-        public Scene Current
-        {
-            get
-            {
-                _scenes.TryPeek(out var top);
-                return top;
-            }
-        }
-
-        public Scene PreviousScene
-        {
-            get
-            {
-                var current = _scenes.Pop();
-                _scenes.TryPeek(out var top);
-                _scenes.Push(current);
-                return top;
-            }
-        }
 
         //**********************************************************
         //** internals
@@ -143,11 +139,13 @@ namespace ConsoleEngine.Infrastructure.Scenery
 
         internal void Cleanup()
         {
+            if (!_unloadScenes.Any()) 
+                return;
+            
             while (_unloadScenes.Any())
-            {
-                var sceneToUnload = _unloadScenes.Dequeue();
-                sceneToUnload.Unload();
-            }
+                _unloadScenes.Dequeue().Unload();
+            
+            GC.Collect();
         }
     }
 }
