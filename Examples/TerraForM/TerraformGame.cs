@@ -6,6 +6,10 @@ namespace TerraForM
 {
     public sealed class TerraformGame : GameBase
     {
+        //**********************************************************
+        //** props: 
+        //**********************************************************
+
         public Camera Camera { get; private set; }
         public string Playername;
         public int Score;
@@ -20,6 +24,10 @@ namespace TerraForM
             "Assets/Maps/map4.txt"
         };
 
+        //**********************************************************
+        //** ctor:
+        //**********************************************************
+
         public TerraformGame() : base(
             width: 72,
             height: 50,
@@ -29,11 +37,28 @@ namespace TerraForM
             Console.ClearColor = ConsoleColor.Black;
         }
 
+        //**********************************************************
+        //** public methods:
+        //**********************************************************
+
+        public void RotateMap()
+        {
+            CurrentMap++;
+            if (CurrentMap >= Maps.Length)
+            {
+                CurrentMap = 0;
+            }
+        }
+        
         protected override void OnInitialize()
         {
             Scenes.Set<InputNameScene>();
             Camera = new Camera(this);
         }
+          
+        //**********************************************************
+        //** overrides:
+        //**********************************************************
 
         protected override void OnUpdate()
         {
@@ -41,13 +66,5 @@ namespace TerraForM
         }
 
         protected override void OnRender() { }
-
-        public void RotateMap()
-        {
-            CurrentMap++;
-            if (CurrentMap >= Maps.Length) {
-                CurrentMap = 0;
-            }
-        }
     }
 }
