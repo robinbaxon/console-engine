@@ -4,7 +4,7 @@ using TerraForM.Scenes;
 
 namespace TerraForM
 {
-    public sealed class TerraformGame : GameBase
+    public class TerraformGame : GameBase
     {
         //**********************************************************
         //** props: 

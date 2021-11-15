@@ -19,7 +19,6 @@ namespace TerraForM.Tests
         [Test]
         public void Rover_PowerIsDepletedWhenRemainingPowerIsZeroOrLess()
         {
-            var game = Substitute.For<TerraformGame>();
             var world = Substitute.For<World>();
             var scene = Substitute.For<GameScene>("map");
             
