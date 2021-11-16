@@ -13,7 +13,7 @@ namespace TerraForM
         public Camera Camera { get; private set; }
         public string Playername;
         public int Score;
-        public int CurrentMap = 0;
+        public int CurrentMap = 1;
         public bool GameOver;
         public bool IsDebugMode;
         public string[] Maps = {
