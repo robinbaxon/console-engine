@@ -5,7 +5,10 @@
     <TargetFramework>net6.0</TargetFramework>
     <LangVersion>10</LangVersion>
     <RootNamespace>TerraForM</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile> 
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
+  
 
   <ItemGroup>
     <ProjectReference Include="..\..\ConsoleEngine\ConsoleEngine.csproj" />
