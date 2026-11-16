@@ -377,6 +377,10 @@ Underground it is dark. What you see comes from daylight near the surface and fr
 | `Dim` | Dark shades only; ore specks in their darker colour |
 | `Dark` | Black. If you saw the tile before, a faint grey outline **without ore colours** |
 
+In 24-bit colour (on by default where the console can show it, `C` switches it) the same light is smooth: rock fades
+gradually with distance, warm in lamp light, and ore specks stay brighter than their rock. The levels still decide
+gameplay (mist, glints, what counts as seen); see [rendering-and-effects.md](rendering-and-effects.md#24-bit-terrain).
+
 Where the light comes from:
 
 | Source | Lights |

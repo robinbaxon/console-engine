@@ -11,7 +11,9 @@ namespace EternalDigger.Systems;
 /// Draws every tile from the grass row down that is on screen, by the <see cref="LightMap"/>: bright tiles in full
 /// colour, lit ones without their fill, dim ones in dark colours, and dark tiles that were seen before as faint
 /// silhouettes. Unseen dark tiles stay black. Lit rock around black damp shows as dark-grey <c>░</c>. Adds ladders and
-/// cracks for damaged tiles. Textures are picked by the mine's noise, so they never flicker.
+/// cracks for damaged tiles. Textures are picked by the mine's noise, so they never flicker. In 24-bit colour
+/// (<see cref="Canvas.IsTrueColor"/>) tiles are shaded by <see cref="LightMap.Intensity"/> instead: the same
+/// characters, colours from <see cref="TileShade"/> fading smoothly with the light, warm in lamp light.
 /// </summary>
 public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine, LightMap light) : EntitySystem
 {
@@ -22,6 +24,9 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
     private const int TextureSalt = 101;
     private const int SpeckSalt = 103;
     private const int CrackSalt = 107;
+
+    /// <summary>A lit ladder is never darker than this, so it reads against the back wall.</summary>
+    private const float LadderFloor = .4f;
 
     private Query _miners;
 
@@ -77,6 +82,9 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
                          mine.IsBlackDampEdge(column, row);
         var hitsToBreak = Tiles.HitsToBreak(cell.Type, Mine.Depth(row), _fewerHits);
         var cracks = hitsToBreak > 0 ? (cell.Damage * 8 + hitsToBreak - 1) / hitsToBreak : 0;
+        var trueColor = canvas.IsTrueColor;
+        var shade = new Shade(light.Intensity(column, row), light.IsWarm(column, row) ? 1f : 0f,
+            TileShade.For(cell.Type));
         for (var dy = 0; dy < Layout.TileHeight; dy++)
         for (var dx = 0; dx < Layout.TileWidth; dx++)
         {
@@ -85,6 +93,13 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
             var texture = look.Texture[(int)(mine.Noise(cellX, cellY, TextureSalt) * look.Texture.Length)];
             var isSpeck = look.HasSpecks && mine.Noise(cellX, cellY, SpeckSalt) < look.SpeckShare;
             var isCrack = cracks > 0 && mine.Noise(cellX, cellY, CrackSalt) * 8f < cracks;
+            if (trueColor)
+            {
+                var crack = TileLooks.CrackCharacters[(dx + dy) % TileLooks.CrackCharacters.Length];
+                DrawCellRgb(x + dx, y + dy, look, shade, texture, isSpeck, isCrack ? crack : '\0', isDampEdge,
+                    cell.Seen);
+                continue;
+            }
 
             char character;
             ConsoleColor foreground;
@@ -133,8 +148,54 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
         }
     }
 
+    /// <summary>
+    /// One cell of a solid tile in 24-bit colour: texture and fill scaled by the smooth light, ore specks brighter,
+    /// remembered rock a cool grey stipple. <paramref name="crack"/> is <c>'\0'</c> for no crack.
+    /// </summary>
+    private void DrawCellRgb(int x, int y, TileLook look, Shade shade, char texture, bool isSpeck, char crack,
+        bool isDampEdge, bool seen)
+    {
+        if (shade.Intensity <= 0f)
+        {
+            // Remembered: a faint outline of the rock. Never shows ore, glints do that.
+            var remembered = seen && texture != ' ' && texture != '·';
+            canvas.DrawRgb(x, y, remembered ? '░' : ' ', TileShade.Remembered, Rgb.Black);
+            return;
+        }
+
+        var background = TileShade.Lit(shade.Colors.Background, shade.Intensity, shade.Warmth);
+        var character = texture;
+        var foreground = TileShade.Lit(shade.Colors.Foreground, shade.Intensity, shade.Warmth);
+        if (isSpeck)
+        {
+            character = look.Speck;
+            foreground = TileShade.Speck(shade.Colors.Speck, shade.Intensity, shade.Warmth);
+        }
+        else if (isDampEdge)
+        {
+            // The walls of black damp: dark grey, as if the bad air soaks up the light.
+            character = TileLooks.BlackDampEdge;
+            foreground = Rgb.Scale(Rgb.Of(ConsoleColor.DarkGray), shade.Intensity);
+            background = Rgb.Black;
+        }
+
+        if (crack != '\0')
+        {
+            character = crack;
+            foreground = TileShade.Crack(background, shade.Intensity);
+        }
+
+        canvas.DrawRgb(x, y, character, foreground, background);
+    }
+
     private void DrawAir(int column, int row, int x, int y, byte level, TileCell cell)
     {
+        if (canvas.IsTrueColor)
+        {
+            DrawAirRgb(column, row, x, y, level, cell);
+            return;
+        }
+
         for (var dy = 0; dy < Layout.TileHeight; dy++)
         {
             if (cell.HasLadder && (level > LightMap.Dark || cell.Seen))
@@ -160,6 +221,36 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
         }
     }
 
+    /// <summary>A dug-out tile in 24-bit colour: the cave's back wall in the light, a ladder over it.</summary>
+    private void DrawAirRgb(int column, int row, int x, int y, byte level, TileCell cell)
+    {
+        var intensity = light.Intensity(column, row);
+        var warmth = light.IsWarm(column, row) ? 1f : 0f;
+        var wall = intensity > 0f ? TileShade.Lit(TileShade.BackWall, intensity, warmth) : Rgb.Black;
+        for (var dy = 0; dy < Layout.TileHeight; dy++)
+        {
+            if (cell.HasLadder && (level > LightMap.Dark || cell.Seen))
+            {
+                var color = level > LightMap.Dark
+                    ? TileShade.Lit(Rgb.Of(ConsoleColor.Yellow), Math.Max(intensity, LadderFloor), warmth)
+                    : TileShade.RememberedLadder;
+                for (var dx = 0; dx < Layout.TileWidth; dx++)
+                    canvas.DrawRgb(x + dx, y + dy, TileLooks.LadderRow[dx], color, wall);
+                continue;
+            }
+
+            var dotColor = TileShade.Lit(TileShade.BackWallDot, intensity, warmth);
+            for (var dx = 0; dx < Layout.TileWidth; dx++)
+            {
+                // The cave's back wall: a few faint dots where light falls.
+                var cellX = column * Layout.TileWidth + dx;
+                var cellY = row * Layout.TileHeight + dy;
+                var dot = level >= LightMap.Lit && mine.Noise(cellX, cellY, TextureSalt) < .12f;
+                canvas.DrawRgb(x + dx, y + dy, dot ? '·' : ' ', dotColor, wall);
+            }
+        }
+    }
+
     /// <summary>The surface: green tufts over sunny soil. Always in daylight.</summary>
     private void DrawGrass(int column, int row, int x, int y)
     {
@@ -177,4 +268,7 @@ public sealed class TerrainRenderSystem(Canvas canvas, Camera camera, Mine mine,
     }
 
     private static int FloorDiv(int value, int divisor) => (int)MathF.Floor((float)value / divisor);
+
+    /// <summary>The light on one tile and its colours, for <see cref="DrawCellRgb"/>.</summary>
+    private readonly record struct Shade(float Intensity, float Warmth, TileRgb Colors);
 }

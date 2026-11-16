@@ -48,6 +48,7 @@ team's process differs.
 | EternalDigger | ↓ / S (held), ↑ / W (held, on a ladder) | Dig/step down; climb or dig up | same |
 | EternalDigger | SPACE / E | Place a ladder (or, on a ladder, pick it back up) / deliver at the door or buy a ladder at the shop | `MinerControlSystem`, `InteractionSystem` |
 | EternalDigger | TAB | Inventory screen on/off (pauses the game while open) | `InventorySystem` |
+| EternalDigger | C (title and mine) | 24-bit colour (smooth, warm lamp light; the default) or the 16 colours | `EternalDiggerGame.OnUpdate` |
 | EternalDigger | R (hold 1.5 s) / ESC | Rescue to the surface (the bag is lost) / save and quit | `MinerControlSystem`, `EternalDiggerGame.OnUpdate` |
 | EternalDigger (counter) | ↑↓ / E at the shop counter | Choose an item / buy one (ladder, fill lamp, an upgrade tier, the kit or a stick) | `InteractionSystem`, `ShopCounter` |
 | EternalDigger (dynamite) | hold E 0.5 s underground facing rock (+ an arrow to aim: ↓ below, ↑ above, ←→ sides); on the lift's bottom landing tap E for the lift, hold it to plant | plant a lit stick (2 s fuse, 3 × 3 blast) | `InteractionSystem`, `MinerControlSystem.UpdatePlanting`, `DynamiteSystem` |

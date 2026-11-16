@@ -52,9 +52,12 @@ Examples/EternalDigger/
 │   ├── ParticleLooks.cs        characters and colours per style over a lifetime; GlyphAt
 │   └── ScreenShake.cs          shake strength: Add, Update
 ├── Rendering/
-│   ├── Canvas.cs               draws through RenderConsole and remembers backgrounds
-│   ├── LightMap.cs             per-tile light on screen: daylight + headlamp cone (reach, flicker dimming)
+│   ├── Canvas.cs               draws through RenderConsole (palette or 24-bit) and remembers backgrounds
+│   ├── LightMap.cs             per-tile light on screen: daylight + headlamp cone (reach, flicker dimming);
+│   │                           four levels and a smooth Intensity/IsWarm for 24-bit colour
 │   ├── Headlamp.cs             this frame's lamp: Reach, IsDimmed, IsLow, IsEmpty
+│   ├── Rgb.cs                  0xRRGGBB helpers: Of(ConsoleColor), Scale
+│   ├── TileShade.cs            24-bit tile colours (TileRgb per TileType) and how light shades them
 │   └── TileLooks.cs            TileLook per TileType; ladder and crack characters
 ├── README.md                   start here
 └── docs/                       this documentation
@@ -119,8 +122,8 @@ Examples/EternalDigger/
 | `Mine` | `MineScene` | control, motion, light, glints, mist, particle physics, terrain, saving | `At`, `TypeAt`, `IsSolid`, `HasLadder`, `IsSupported`, `Hit`, `TryPlaceLadder`, `CollectChanges`, `Apply`, `WallBottomDepth`, `Noise`, `GeneratedRows`; static `Depth`, `IsInside` |
 | `EffectSpawner` | `MineScene` | control, interaction, motion, glints, mist | `DigHit`, `Clank`, `TileBreak`, `RareFind`, `Pulse`, `PlantDynamite`, `FuseSpark`, `Blast`, `ClimbTrail`, `FootDust`, `LandingDust`, `Glint`, `Mist`, `Coins`, `Pop`, `Number`, `Shake` |
 | `ScreenShake` | `MineScene` (inside `EffectSpawner`) | `EffectSpawner`, `CameraSystem` | `Add`, `Update`, `Strength` |
-| `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `Get`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright` |
-| `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawOver`, `BackgroundAt`, `Width`, `Height` |
+| `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `AddLantern`, `Get`, `Intensity`, `IsWarm`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright`, `IntensitySteps` |
+| `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawRgb`, `DrawOver`, `BackgroundAt`, `IsTrueColor`, `Width`, `Height` |
 | `Random(seed)` | `MineScene` | `EffectSpawner`, camera, glints, mist | — |
 | `Elevator` | `MineScene` | control, interaction, `ElevatorSystem`, lift and prompt rendering, HUD, saving | `TryBuild`, `CanBuildNext`, `Send`, `PickedUp`, `Update`, `Restore`, `IsLanding`, `IsCarAt`, `Segments`, `Depth`, `BottomRow`, `NextSegmentPrice`, `CarRow`, `CarTargetRow`, `IsCarMoving`, `IsCalled`; consts `Column`, `TopRow` |
 | `ShopCounter` | `MineScene` | interaction, prompts | `Selected`, `Previous`, `Next`, `Select`; static `Items`, `Name` |
@@ -189,6 +192,8 @@ Static rule classes: `Tiles`, `Shop`, `Upgrades`, `Layout`, `TileLooks`, `Partic
 | `LightMap.NearRadius` | 1.5 tiles | Always-bright radius |
 | `LightMap.LampRange` / `BrightRange` / `LitRange` | 8 / 4 / 6 tiles | Starting lamp reach and fall-off (bright and lit scale with the reach: ½ and ¾) |
 | `LightMap.ConeHalfAngle` | 40° | Half the lamp cone |
+| `LightMap.IntensitySteps` | 32 | Smooth light is rounded to 1/32 (24-bit colour) |
+| `TileShade.SpeckFloor` / `LightCrackBelow` | 0.35 / 0.45 | 24-bit: least share of an ore speck's colour; below this light a crack is drawn light |
 | `MistSystem.MaxMist` | 40 | Mist particles at most |
 | `ParticleRenderSystem.NearMinerCap` | 6 | Particles drawn per frame in the one-tile ring around the miner |
 | `ScreenShake.MaxStrength` / `Decay` | 2 cells / 6 per s | Shake cap and fade |

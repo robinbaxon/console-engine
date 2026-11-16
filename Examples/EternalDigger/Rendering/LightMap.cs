@@ -39,9 +39,24 @@ public sealed class LightMap
     /// <summary>Steps per tile when walking the ray from the lamp to a tile.</summary>
     private const int RaySamplesPerTile = 4;
 
+    /// <summary>
+    /// <see cref="Intensity"/> is rounded to 1/32: the light glides with the miner, but a tile's colour only changes in
+    /// visible steps, so fewer console rows change per frame.
+    /// </summary>
+    public const float IntensitySteps = 32f;
+
+    /// <summary>The lamp's intensity in a flicker frame, and with an empty lamp.</summary>
+    private const float FlickerShare = .8f;
+    private const float EmptyLampShare = .5f;
+
+    /// <summary>The cone fades to this share of its light at its edge.</summary>
+    private const float ConeEdgeShare = .7f;
+
     private readonly int _columns;
     private readonly int _maxRows;
     private readonly byte[] _levels;
+    private readonly float[] _intensities;
+    private readonly bool[] _warm;
 
     //**********************************************************
     //** ctor
@@ -52,6 +67,8 @@ public sealed class LightMap
         _columns = columns;
         _maxRows = maxRows;
         _levels = new byte[columns * maxRows];
+        _intensities = new float[columns * maxRows];
+        _warm = new bool[columns * maxRows];
     }
 
     //**********************************************************
@@ -83,18 +100,26 @@ public sealed class LightMap
         FirstRow = Math.Max(0, firstRow);
         Rows = Math.Clamp(rows, 0, _maxRows);
         Array.Clear(_levels);
+        Array.Clear(_intensities);
+        Array.Clear(_warm);
 
         var direction = lampDirection.LengthSquared() > 0f ? Vector2.Normalize(lampDirection) : Vector2.UnitX;
+        var lampShare = (reach <= 0f ? EmptyLampShare : 1f) * (dimmed ? FlickerShare : 1f);
         for (var r = 0; r < Rows; r++)
         for (var column = 0; column < _columns; column++)
         {
             var row = FirstRow + r;
-            var lamp = Lamp(mine, column, row, lampOrigin, direction, reach);
+            var lamp = Lamp(mine, column, row, lampOrigin, direction, reach, out var lampIntensity);
             if (lamp > Dim && (dimmed || reach <= 0f))
                 lamp--;
 
-            var level = Math.Max(Daylight(mine, column, row), lamp);
-            _levels[r * _columns + column] = level;
+            var daylight = Daylight(mine, column, row, out var dayIntensity);
+            var level = Math.Max(daylight, lamp);
+            var index = r * _columns + column;
+            _levels[index] = level;
+            lampIntensity *= lampShare;
+            _intensities[index] = Quantize(Math.Max(dayIntensity, lampIntensity));
+            _warm[index] = lampIntensity > dayIntensity;
             if (level > Dark)
                 mine.At(column, row).Seen = true;
         }
@@ -114,8 +139,16 @@ public sealed class LightMap
         for (var column = 0; column < _columns; column++)
         {
             var distance = Vector2.Distance(new Vector2(column + .5f, row + .5f), center);
+            var index = (row - FirstRow) * _columns + column;
+            var intensity = Quantize(LanternIntensity(distance, radius, reach));
+            if (intensity > _intensities[index])
+            {
+                _intensities[index] = intensity;
+                _warm[index] = true;
+            }
+
             var level = distance <= radius ? Lit : distance <= reach ? Dim : Dark;
-            ref var current = ref _levels[(row - FirstRow) * _columns + column];
+            ref var current = ref _levels[index];
             if (level <= current)
                 continue;
 
@@ -133,20 +166,47 @@ public sealed class LightMap
         return _levels[r * _columns + column];
     }
 
+    /// <summary>
+    /// How much light falls on a tile, 0 (none) to 1 (full), in steps of 1/<see cref="IntensitySteps"/>: the smooth
+    /// version of <see cref="Get"/>, for 24-bit colour. 0 outside the window.
+    /// </summary>
+    public float Intensity(int column, int row)
+    {
+        var r = row - FirstRow;
+        if ((uint)column >= (uint)_columns || (uint)r >= (uint)Rows)
+            return 0f;
+
+        return _intensities[r * _columns + column];
+    }
+
+    /// <summary>Whether a tile's light comes from the lamp or a lantern (warm), not daylight.</summary>
+    public bool IsWarm(int column, int row)
+    {
+        var r = row - FirstRow;
+        return (uint)column < (uint)_columns && (uint)r < (uint)Rows && _warm[r * _columns + column];
+    }
+
     //**********************************************************
     //** internals
     //**********************************************************
 
     /// <summary>The sky and grass are bright. Daylight reaches a little way into dug-out tiles right below.</summary>
-    private static byte Daylight(Mine mine, int column, int row)
+    private static byte Daylight(Mine mine, int column, int row, out float intensity)
     {
         var depth = Mine.Depth(row);
         if (depth <= 0)
+        {
+            intensity = 1f;
             return Bright;
+        }
 
         if (depth > 3 || !IsOpen(mine, column, row))
+        {
+            intensity = 0f;
             return Dark;
+        }
 
+        intensity = depth switch { 1 => .6f, 2 => .4f, _ => .3f };
         return depth == 1 ? Lit : Dim;
     }
 
@@ -155,22 +215,45 @@ public sealed class LightMap
         !mine.IsSolid(column, row) || !mine.IsSolid(column - 1, row) || !mine.IsSolid(column + 1, row) ||
         !mine.IsSolid(column, row - 1);
 
-    private static byte Lamp(Mine mine, int column, int row, Vector2 origin, Vector2 direction, float reach)
+    /// <summary>
+    /// The lamp's level on a tile, and its smooth <paramref name="intensity"/>: 1 near the lamp, falling linearly to
+    /// .75 at the end of the bright range, .5 at the end of the lit range and .25 at the reach (so it matches the
+    /// levels), and fading towards the cone's edge.
+    /// </summary>
+    private static byte Lamp(Mine mine, int column, int row, Vector2 origin, Vector2 direction, float reach,
+        out float intensity)
     {
         var toTile = new Vector2(column + .5f, row + .5f) - origin;
         var distance = toTile.Length();
+        intensity = 1f;
         if (distance <= NearRadius)
             return Bright;
 
-        if (distance > reach || Vector2.Dot(toTile / distance, direction) < ConeCos ||
-            IsBlocked(mine, origin, toTile, distance, column, row))
+        var alignment = distance > reach ? -1f : Vector2.Dot(toTile / distance, direction);
+        if (alignment < ConeCos || IsBlocked(mine, origin, toTile, distance, column, row))
+        {
+            intensity = 0f;
             return Dark;
+        }
 
+        var edge = Math.Min(1f, (alignment - ConeCos) / (1f - ConeCos) * 3f);
+        intensity = Math.Min(1f, 1.25f - distance / reach) * (ConeEdgeShare + (1f - ConeEdgeShare) * edge);
         if (distance < reach * BrightShare)
             return Bright;
 
         return distance < reach * LitShare ? Lit : Dim;
     }
+
+    /// <summary>A lantern: .8 at its centre, .55 at <paramref name="radius"/>, .25 at <paramref name="reach"/>.</summary>
+    private static float LanternIntensity(float distance, float radius, float reach)
+    {
+        if (distance <= radius)
+            return .8f - .25f * distance / radius;
+
+        return distance <= reach ? .55f - .3f * (distance - radius) / (reach - radius) : 0f;
+    }
+
+    private static float Quantize(float intensity) => MathF.Round(intensity * IntensitySteps) / IntensitySteps;
 
     /// <summary>Whether a solid tile lies between the lamp and the target tile (not counting those two).</summary>
     private static bool IsBlocked(Mine mine, Vector2 origin, Vector2 toTile, float distance, int column, int row)

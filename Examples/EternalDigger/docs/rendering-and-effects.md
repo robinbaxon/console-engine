@@ -10,7 +10,7 @@ The Presentation group draws in `Add` order, each layer over the last:
 | # | System | Draws | Covers |
 |---|---|---|---|
 | 1 | `SkyRenderSystem` | Sky gradient, sun, clouds, hills | Every screen cell above the grass |
-| 2 | `TerrainRenderSystem` | Every tile from the grass row down, by light level | Every screen cell from the grass down (the mine's 30 columns) |
+| 2 | `TerrainRenderSystem` | Every tile from the grass row down, by light level (24-bit: by smooth light, [24-bit terrain](#24-bit-terrain)) | Every screen cell from the grass down (the mine's 30 columns) |
 | 3 | `HouseRenderSystem` | House, sign, chimney smoke, ladder shop, `MINE` frame, `LIFT` sign | Fixed spots on the surface |
 | 4 | `ElevatorRenderSystem` | Shaft walls and braces, cable, car, speed lines | The shaft column (and the cells beside it), over terrain |
 | 5 | `CampRenderSystem` | The deep camp once bought: tent `/▀\` (dark yellow, dark-grey door), flickering lantern `¤` on a pole, `CAMP` plank, crate | Columns 22–24, rows 109–110 |
@@ -30,14 +30,17 @@ The engine's `RenderConsole.Draw(x, y, char, fg, bg)` always sets the background
 in front of the house or a coin against the sky would each punch a black (or wrongly coloured) box into the scene,
 and the engine has no public way to read a cell's colour back.
 
-`Rendering/Canvas.cs` wraps the `RenderConsole` and keeps one `ConsoleColor[]` the size of the screen:
+`Rendering/Canvas.cs` wraps the `RenderConsole` and keeps the background of every screen cell: a `ConsoleColor[]`
+for palette cells and a `uint[]` for 24-bit cells.
 
 | Method | Does |
 |---|---|
-| `Draw(x, y, char, fg, bg)` | Draws and records `bg` for the cell. Clips to the screen |
-| `Draw(x, y, ReadOnlySpan<char>, fg, bg)` | The same for text |
-| `DrawOver(x, y, char, fg)` | Draws a character with the background **already recorded** at that cell |
-| `BackgroundAt(x, y)` | The last background drawn there (black off-screen) |
+| `Draw(x, y, char, fg, bg)` | Draws in the 16 colours and records `bg` for the cell. Clips to the screen |
+| `DrawRgb(x, y, char, fgRgb, bgRgb)` | Draws in 24-bit colour (`0xRRGGBB`) and records `bgRgb`. Clips to the screen |
+| `Draw(x, y, ReadOnlySpan<char>, fg, bg)` | The same as `Draw` for text |
+| `DrawOver(x, y, char, fg)` | Draws a character with the background **already recorded** at that cell; over a 24-bit cell the `ConsoleColor` foreground is drawn as its RGB (`Rgb.Of`) on that 24-bit background |
+| `BackgroundAt(x, y)` | The last palette background drawn there (black off-screen, and black for a 24-bit cell) |
+| `IsTrueColor` | `RenderConsole.TrueColorActive`: whether to draw the 24-bit look this frame |
 
 Because the sky and the terrain cover every cell each frame, the recorded backgrounds are always this frame's. Rule
 for new code: **world layers use `Draw`, things drawn on top use `DrawOver`.**
@@ -74,7 +77,21 @@ black damp it is then halved (`LampOil.DarkReach`); lit rock touching black damp
 (`TileLooks.BlackDampEdge`).
 
 Other systems use the light map too: `ParticleRenderSystem` hides dust and mist in the dark, `MistSystem` only spawns
-mist in lit tiles, and `GlintSystem` makes ore in the dark glint more.
+mist in lit tiles, and `GlintSystem` makes ore in the dark glint more. All of them use the four levels.
+
+### Smooth light (24-bit colour)
+
+Next to the level, `Compute` stores a smooth `Intensity(column, row)` (0–1) and `IsWarm(column, row)` per tile, which
+only the 24-bit terrain uses:
+
+| Source | Intensity | Warm |
+|---|---|---|
+| Daylight | 1 at the surface; 0.6 / 0.4 / 0.3 at depth 1 / 2 / 3 (same tiles as the levels) | No |
+| Lamp | 1 within `NearRadius`; else `min(1, 1.25 − distance / reach)`, so 0.75 / 0.5 / 0.25 where the levels change from bright / lit / dim; × 0.7–1 towards the cone's edge (`ConeEdgeShare`, full from a third of the way in); × 0.8 in a flicker frame (`FlickerShare`), × 0.5 with an empty lamp (`EmptyLampShare`) | When it is brighter than daylight |
+| Lantern (`AddLantern`) | 0.8 at the centre, 0.55 at the radius, 0.25 at 1.5 × the radius; raises a tile, never lowers it | Yes |
+
+The brighter of daylight and lamp wins. Every intensity is rounded to 1/32 (`IntensitySteps`), so a tile's colour
+changes in visible steps rather than every frame as the light glides with the miner, and fewer console rows change.
 
 ## Terrain
 
@@ -111,6 +128,31 @@ string, colours for full and dim light, and for ores a speck character (`◆`) a
   dark but seen.
 - **Grass row:** green `▀` tufts (`▓` here and there) over a sunny soil row. Always drawn as daylight. The shaft
   tile in that row is drawn like any dug-out tile with a ladder.
+
+### 24-bit terrain
+
+`EternalDiggerGame` sets `RenderConsole.TrueColor` in `OnInitialize`, and `C` switches it on and off while playing.
+While `Canvas.IsTrueColor`, `TerrainRenderSystem` draws tiles through `Canvas.DrawRgb` instead of the table above. The
+characters, specks, cracks and their noise stay the same; the colours come from `Rendering/TileShade.cs`:
+
+- **Rock:** `TileShade.For(type)` gives a `TileRgb` (texture, fill, speck colour at full light: earthy dirt, grey
+  stone, mauve granite, blue slate, teal quartzite, near-black obsidian). Texture and fill are both multiplied by the
+  tile's `Intensity` (`TileShade.Lit`), so the fill fades out with the light instead of dropping to black at `Lit`.
+  Lamp and lantern light is warm: green × 0.86 and blue × 0.62 (`WarmGreen`, `WarmBlue`); daylight keeps the hue.
+- **Ore specks:** `TileShade.Speck` never goes below 35% of its colour (`SpeckFloor`), so a lit vein always stands out.
+- **Cracks:** black on a fill lit 45% or more (`LightCrackBelow`), light grey on darker rock (`TileShade.Crack`).
+- **Black damp edge:** the `░`, dark grey scaled by the light, on black.
+- **Dark, seen before:** `░` in cool grey `TileShade.Remembered` (`0x4A4E57`) on black; never seen: black.
+- **Air:** the cave's back wall `TileShade.BackWall` (`0x40342A`, warm brown) as the background, scaled by the light;
+  the 12% `·` dots in `BackWallDot`. Black in the dark.
+- **Ladders:** `╟──╢` in yellow scaled by the light (at least 40%, `LadderFloor`) on the back wall; when dark but seen
+  `TileShade.RememberedLadder`.
+- **Grass row**, sky, house and every overlay stay in the 16 colours. Overlays drawn with `DrawOver` keep the 24-bit
+  background under them.
+
+Without 24-bit colour (an old console, a terminal without it, or `C` pressed) everything is drawn as in the tables
+above. Frame cost in a real console has **not been measured**: smooth tiles change colour about every 4 cells, which is
+the cheap case for VT output (AGENTS.md § Performance), but the whole terrain changes while the miner moves.
 
 ## Sky and surface
 
