@@ -15,7 +15,7 @@ The Presentation group draws in `Add` order, each layer over the last:
 | 4 | `ElevatorRenderSystem` | Shaft walls and braces, cable, car, speed lines | The shaft column (and the cells beside it), over terrain |
 | 5 | `CampRenderSystem` | The deep camp once bought: tent `/▀\` (dark yellow, dark-grey door), flickering lantern `¤` on a pole, `CAMP` plank, crate | Columns 22–24, rows 109–110 |
 | 6 | `DynamiteRenderSystem` | Planted sticks: red `¡` with a `*` fuse flickering yellow/red above it | The stick's tile, in the dark too |
-| 7 | `ParticleRenderSystem` | Every particle glyph, except on the miner's cells; in 24-bit colour mist and gas as see-through tints ([Blended overlays](#blended-overlays)) | Over the world, keeping its background |
+| 7 | `ParticleRenderSystem` | Every particle glyph and rubble body ([Rubble](#rubble-bodies)), except on the miner's cells; in 24-bit colour mist and gas as see-through tints ([Blended overlays](#blended-overlays)) | Over the world, keeping its background |
 | 8 | `MinerRenderSystem` | The 4 × 2 miner and the lamp glow (a jump draws him up to 2 cells higher, in an arc) | Over the world and the particles |
 | 9 | `FloatingTextRenderSystem` | `+150g` / `-10g` / `ELEVATOR +10m` / `OIL +40` / `GAS!` / `BLACK DAMP` | Over everything so far |
 | 10 | `PromptRenderSystem` | The door prompt, the counter panels (surface and deep camp), the lift sign and landing prompts, the dynamite hints; see-through in 24-bit colour | Above the miner |
@@ -307,6 +307,40 @@ flowchart LR
   debris, sparks, coins and glints show everywhere. Nothing is drawn on the miner's cells, and the ring around him
   is capped and dimmed ([Keeping him readable](#the-miner)).
 
+### Rubble bodies
+
+The big chunks of a tile break (4–6 of its 14–22 chunks, `EffectSpawner.BreakRubbleMin`/`BreakRubbleMax`) and of a
+blast (12 of its 40 stone chunks, `BlastRubbleBodies`) are not particles but `ConsoleEngine.Physics` bodies, made by
+`EffectSpawner.Rubble`: a dynamic `RigidBody` (mass 1, linear damping 0.1, angular 0.8) with a box `Collider`
+(half size 0.45 cells, friction 0.8, restitution 0.15), `Rotation` + `AngularVelocity` (a random spin up to 8 rad/s),
+`Force`, `Interpolation` + `RenderOffset`, a `Glyph` and a `Rubble` (age, lifetime 20–30 s, the tile's debris style).
+They tumble, bounce a little, slide, pile up in tunnels and fall down shafts; the rest of the chunks, the dust, sparks,
+glints, mist and the 150 hot `Blast` particles stay particles.
+
+- **Physics** runs in `MineScene.FixedSimulation` at 60 Hz: `RubbleGridSystem`, `ShockwaveSystem`, then the engine's
+  `PhysicsSystem` (`Gravity` 40 cells/s² down, `EffectSpawner.RubbleGravity`, the same pull as debris particles).
+  Resting rubble sleeps after 0.5 s (the engine's default), so a pile costs almost nothing until something wakes it.
+- **Tiles:** the engine's `TileGrid` is finite and the mine is endless, so `Mining/RubbleGrid.cs` keeps a window of
+  64 rows (`RubbleGrid.Rows`) around the screen. When the screen gets within 4 rows (`Margin`) of its edge it builds a
+  new grid centred on the screen (an allocation every 20 or so rows of scrolling, never per frame). Every fixed step
+  `Sync` copies the window's tiles that changed in the mine (`Mine.IsSolid`): rubble beside a changed tile is woken
+  (a pile falls when its floor is dug or blasted away), rubble in a tile that turned solid or got a ladder is destroyed.
+- **Blasts** create a `Shockwave` at their centre (radius: the blast area plus 8 cells; 30 cells/s at the centre).
+  At the next fixed step `ShockwaveSystem` gives every rubble body in reach a `Force` that changes its speed by up to
+  that much in one step, outwards (vertical halved) and upwards, falling off to 0 at the radius, and wakes it. Rubble
+  younger than 0.1 s (`NewbornSeconds`) is left alone: the blast threw it already.
+- **Limits** (`RubbleSystem`, after `ParticleLifetimeSystem`): rubble is destroyed at the end of its life, more than
+  4 rows above or below the screen (`ScreenMargin`), or over 80 bodies (`MaxRubble`, the oldest first).
+- **The miner** has no body: rubble never pushes him or blocks his tile-stepped moves. Rubble on his 4 × 2 cells or in
+  the tile he is moving into is destroyed with a puff of dust (`EffectSpawner.RubbleDust`): he kicks it apart.
+- **Look:** `RubbleSystem.GlyphOf`: `■` while it lies within 22.5° of square, `▪` while tilted, in its tile's debris
+  colour (`ParticleLooks.Color` at progress 0); a faded `·` in its last 1.5 s (`FadeSeconds`).
+- **Drawing:** `ParticleRenderSystem` draws rubble after the particles, at `Position + RenderOffset` (the engine's
+  `InterpolationSystem`, first in Presentation, puts it between its last two steps). Not on `Dark` tiles (a pile
+  mustn't give a dark tunnel away), dimmed (`Dim`) on `Dim` tiles, never on the miner's cells, and it counts towards
+  `NearMinerCap` like a particle.
+- **Pause:** the `TAB` inventory disables the FixedSimulation systems too, so rubble freezes.
+
 ### Looks over a lifetime (`Effects/ParticleLooks.cs`)
 
 | Style | Characters, birth → death | Colour |
@@ -330,14 +364,14 @@ flowchart LR
 | Effect | Triggered by | What spawns |
 |---|---|---|
 | `DigHit` | Every shovel hit (`MinerControlSystem`) | 4–7 debris chunks from the struck face, flying back towards the miner and falling (gravity 40, lands on rock), 0.5–1.1 s. Ore adds 2–4 sparks |
-| `TileBreak` | The hit that breaks a tile | 14–22 chunks bursting out, 6–10 dust puffs drifting up, screen shake 0.6 (rock) or 0.9 (ore). Ore adds 6–10 glitter sparks |
+| `TileBreak` | The hit that breaks a tile | 14–22 chunks bursting out (4–6 of them rubble bodies), 6–10 dust puffs drifting up, screen shake 0.6 (rock) or 0.9 (ore). Ore adds 6–10 glitter sparks |
 | `ClimbTrail` | Every tile of a top-speed climb (instead of `FootDust`) | 1–2 specks dropping below the feet |
 | `PlantDynamite` | A stick is planted | No particles: a `Dynamite` entity with `Position` at the tile centre |
 | `Pulse` | `GlintSystem` samples a rare find (always, not by chance) | One slow pulse, 1.4–1.8 s, no gravity |
 | `RareFind` | A fossil or relic is dug out | Two `Pop` rings, 10–15 sparks, a floating `FOSSIL!`/`RELIC!` (white), a 0.6 shake |
 | `LampSmoke` | Every 0.45 s while the lamp is low (`LampSystem`) | One `°` puff rising from the lamp |
 | `FuseSpark` | Every 0.07 s while a fuse burns | A yellow spark off the stick top, and one time in three a grey `·˙` smoke wisp rising |
-| `Blast` | A stick goes off | One frame (0.05 s) of `█` white/yellow over all 3 × 3 tiles (72 cells), 150 `▓▒░·` hot rubble flung out in a ring (`TileCollider`), 40 stone chunks, 40 dust puffs living 1–2 s, a full screen shake (`ScreenShake.MaxStrength`). About 300 particles, plus a white `Glow` lighting the area ([Point lights](#point-lights)) |
+| `Blast` | A stick goes off | One frame (0.05 s) of `█` white/yellow over all 3 × 3 tiles (72 cells), 150 `▓▒░·` hot rubble flung out in a ring (`TileCollider`), 40 stone chunks (12 of them rubble bodies), a `Shockwave` that throws the rubble lying around, 40 dust puffs living 1–2 s, a full screen shake (`ScreenShake.MaxStrength`). About 300 particles, plus a white `Glow` lighting the area ([Point lights](#point-lights)) |
 | `Clank` | The shovel on obsidian | 3–5 sparks from the face, a 0.15 shake, no chunks |
 | `FootDust` | Every other walking step, every climb step below top speed, a placed ladder, a refused `E`/`SPACE` | 1–2 small puffs behind the feet |
 | `LandingDust` | The end of a fall; a rescue | 2 + 2 per row fallen (max 12) puffs to both sides; falls of 3+ rows shake the screen (0.15 per row, max 1.2) |

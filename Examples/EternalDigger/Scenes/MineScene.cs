@@ -1,20 +1,24 @@
 using System;
 using ConsoleEngine.Ecs;
 using ConsoleEngine.Ecs.Components;
+using ConsoleEngine.Physics;
 using EternalDigger.Components;
 using EternalDigger.Effects;
 using EternalDigger.Mining;
 using EternalDigger.Rendering;
 using EternalDigger.Saving;
 using EternalDigger.Systems;
+using Microsoft.Xna.Framework;
 
 namespace EternalDigger.Scenes;
 
 /// <summary>
 /// The whole game: the <see cref="Mine"/> grid, one miner entity, effect particles, and the systems from
 /// <c>Systems/</c>. The order of <c>Add</c> calls is the order they run. Terrain is not made of entities: the mine is
-/// a grid that is drawn from the camera's rows, so an endless mine costs nothing per frame. Starts from
-/// <paramref name="start"/> (a loaded save, or <see cref="SaveData.NewMine"/>) and saves to <paramref name="savePath"/>.
+/// a grid that is drawn from the camera's rows, so an endless mine costs nothing per frame. Rubble chunks are physics
+/// bodies, stepped in <c>FixedSimulation</c> by <see cref="PhysicsSystem"/> against a <see cref="RubbleGrid"/> window.
+/// Starts from <paramref name="start"/> (a loaded save, or <see cref="SaveData.NewMine"/>) and saves to
+/// <paramref name="savePath"/>.
 /// </summary>
 public sealed class MineScene(SaveData start, string savePath) : EcsScene<EternalDiggerGame>
 {
@@ -66,6 +70,12 @@ public sealed class MineScene(SaveData start, string savePath) : EcsScene<Eterna
         var miner = start.ToMiner();
         World.Create(new Position(Layout.TileToWorld(miner.Column, miner.Row)), miner);
 
+        // Rubble physics, at a fixed rate before the frame's simulation.
+        var physics = new PhysicsSystem { Gravity = new Vector2(0f, EffectSpawner.RubbleGravity) };
+        FixedSimulation.Add(new RubbleGridSystem(new RubbleGrid(mine), physics, Camera));
+        FixedSimulation.Add(new ShockwaveSystem());
+        FixedSimulation.Add(physics);
+
         Simulation.Add(new MinerControlSystem(mine, elevator, effects));
         Simulation.Add(new InteractionSystem(mine, elevator, counter, effects, _saver, campCounter,
             toolCounter));
@@ -80,10 +90,13 @@ public sealed class MineScene(SaveData start, string savePath) : EcsScene<Eterna
         Simulation.Add(new MistSystem(mine, light, Camera, effects, random));
         Simulation.Add(new ParticlePhysicsSystem(mine));
         Simulation.Add(new ParticleLifetimeSystem());
+        Simulation.Add(new RubbleSystem(Camera, effects));
         Simulation.Add(new GlowSystem());
         Simulation.Add(new FloatingTextSystem());
         Simulation.Add(new SaveSystem(_saver));
 
+        // Rubble is drawn between its last two physics steps.
+        Presentation.Add(new InterpolationSystem(FixedTimestep));
         Presentation.Add(new SkyRenderSystem(canvas, Camera));
         Presentation.Add(new TerrainRenderSystem(canvas, Camera, mine, light));
         Presentation.Add(new HouseRenderSystem(canvas, Camera));
@@ -98,6 +111,6 @@ public sealed class MineScene(SaveData start, string savePath) : EcsScene<Eterna
             toolCounter));
         Presentation.Add(new HudSystem(canvas, _saver, elevator));
         // Last, over everything: TAB pauses the simulation and shows the inventory.
-        Presentation.Add(new InventorySystem(canvas, elevator, Simulation));
+        Presentation.Add(new InventorySystem(canvas, elevator, Simulation, FixedSimulation));
     }
 }

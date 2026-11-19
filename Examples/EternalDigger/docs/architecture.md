@@ -1,6 +1,7 @@
 # Architecture: how EternalDigger uses the engine
 
-EternalDigger is built only on the engine's ECS (`ConsoleEngine.Ecs`); there is no object-oriented version of it. This
+EternalDigger is built on the engine's ECS (`ConsoleEngine.Ecs`), plus `ConsoleEngine.Physics` for the rubble chunks;
+there is no object-oriented version of it. This
 page walks from the engine's entry points down to a single frame, and explains which parts are entities and which are
 not.
 
@@ -14,7 +15,8 @@ Program.cs                       parses the seed, creates the game, Initialize()
         ├── shared services       Mine, Elevator, ShopCounter, Headlamp, Random, EffectSpawner (+ ScreenShake), LightMap,
         │                         Canvas, GameSaver
         ├── World                 the miner, particles, floating texts
-        ├── World                 (also) planted dynamite
+        ├── World                 (also) planted dynamite, rubble bodies
+        ├── FixedSimulation group 3 systems at 60 Hz: the rubble tile window, blast shockwaves, PhysicsSystem
         ├── Simulation group      15 systems: rules, motion, lift, dynamite, gas, camera, lamp oil, light, effects, saving
         └── Presentation group    10 systems: sky, terrain, house, lift, dynamite, particles, miner, texts, prompts, HUD
 ```
@@ -27,6 +29,8 @@ Program.cs                       parses the seed, creates the game, Initialize()
 | `World`, `Query`, `EntityChunk` | Entity storage and chunk-by-chunk iteration | every system |
 | `EntitySystem` + `Commands` | Game logic; structural changes (spawning and destroying particles) through the group's `CommandBuffer` | `Systems/` |
 | `Position`, `Velocity`, `Glyph` | Built-in components, reused instead of game copies | miner, particles, numbers |
+| `ConsoleEngine.Physics`: `PhysicsSystem`, `TileGrid`, `RigidBody`, `Collider`, `Force`, `Interpolation` | Rubble chunks that tumble, pile up and sleep, against a `TileGrid` window over the mine (`Mining/RubbleGrid.cs`) | `RubbleGridSystem`, `ShockwaveSystem`, `RubbleSystem`, `EffectSpawner.Rubble` |
+| `FixedSimulation`, `FixedTimestep`, `InterpolationSystem` | Physics at a fixed 60 Hz before the frame's simulation; rubble drawn between its last two steps | `MineScene` |
 | `Camera` | Which world cell is in the top-left screen cell | `CameraSystem` writes it, every renderer reads it |
 | `RenderConsole` | The frame buffer, reached through the game's `Canvas` | `Rendering/Canvas.cs` |
 | `Input.Instance` | Key states (`Held`, `Pressed`) | `MinerInput.FromKeyboard` (also `E`: `Use`, `UsePressed`, read by `InteractionSystem` too) |
@@ -91,6 +95,8 @@ Why a grid and not one entity per tile:
 | Per-frame light | `LightMap` (`byte` per on-screen tile) | Recomputed every frame |
 | The miner | Entity: `Position` + `Miner` | Moves, has state, drawn and queried by several systems |
 | Particles | Entities: `Position`, `Velocity`, `Glyph`, `Particle`, `Physics` (+ `TileCollider` or `Mist`) | Hundreds at a time, short-lived, iterated in bulk |
+| Rubble | Entities: physics bodies (`RigidBody`, `Collider`, `Rotation`, `AngularVelocity`, `Force`, `Interpolation`, `RenderOffset`) + `Glyph`, `Rubble` | Up to 80, tumble and pile up for 20–30 s |
+| Physics tiles | `RubbleGrid`: a 64-row `TileGrid` window around the screen | The engine's grid is finite; the window moves with the camera |
 | Floating texts | Entities: `Position`, `Velocity`, `FloatingText` | Short-lived |
 | Planted dynamite | Entities: `Position`, `Dynamite` | A few at a time, burn down and go off |
 | Rules (prices, hits, depths) | `const`s on static classes: `Tiles`, `Shop`, `Layout` | Shared, testable, no state |
@@ -98,7 +104,7 @@ Why a grid and not one entity per tile:
 
 ### Archetypes in play
 
-Because components are grouped by their exact set, the world holds six archetypes:
+Because components are grouped by their exact set, the world holds these archetypes (plus `Glow`):
 
 | Archetype | Created by |
 |---|---|
@@ -108,6 +114,8 @@ Because components are grouped by their exact set, the world holds six archetype
 | … + `Mist` | `EffectSpawner.Mist` |
 | `Position, Velocity, FloatingText` | `EffectSpawner.Number`, `EffectSpawner.Text` |
 | `Position, Dynamite` | `EffectSpawner.PlantDynamite` |
+| `Position, Velocity, Rotation, AngularVelocity, RigidBody, Collider, Glyph, Rubble, Force, Interpolation, RenderOffset` | `EffectSpawner.Rubble` (from `TileBreak` and `Blast`) |
+| `Position, Shockwave` | `EffectSpawner.Blast` (destroyed by `ShockwaveSystem` at the next fixed step) |
 
 Systems pick the parts they need with queries, for example `Query.With<Particle, Position, Velocity>().With<Physics>()`
 matches all three particle archetypes, and `chunk.Has<TileCollider>()` tells a chunk loop whether to run collisions.
@@ -119,7 +127,13 @@ The engine's loop (`GameBase.Start`) runs: `GameTime.Update` → `Input.Instance
 EternalDigger that becomes:
 
 ```text
-Scenes.Update → MineScene.OnUpdate → Simulation.Update(dt)
+Scenes.Update → MineScene.OnUpdate → FixedSimulation.Update(1/60 s), 0–4 times as FixedTimestep says
+  RubbleGridSystem        move the RubbleGrid window with the camera, copy dug/blasted/built tiles; wake rubble beside
+                          a changed tile, destroy rubble in a tile that turned solid or got a ladder
+  ShockwaveSystem         blast shockwaves push rubble lying around (Force), then are destroyed
+  PhysicsSystem           rubble bodies: gravity, contacts with tiles and each other, sleeping
+  ── Commands.Playback
+→ Simulation.Update(dt)
   MinerControlSystem      MinerInput.FromKeyboard(); rescue, ride keys in the lift, fall, ladder, walk or dig
                             → Mine.Hit / TryPlaceLadder / Elevator.Send, effects recorded in Commands
   InteractionSystem       E at the door/shop/lift sign/landing → Deliver / TryBuyLadder / Elevator.TryBuild / call
@@ -135,13 +149,14 @@ Scenes.Update → MineScene.OnUpdate → Simulation.Update(dt)
   MistSystem              keep up to 40 mist particles in lit caves
   ParticlePhysicsSystem   gravity, drag, move, land on rock
   ParticleLifetimeSystem  age, pick the glyph for the age, destroy expired
+  RubbleSystem            age rubble, glyph by its tilt, destroy old / off-screen / on the miner / over the cap
   GlowSystem              age blast and gas-flare glows, destroy expired
   FloatingTextSystem      drift up, destroy expired
   SaveSystem              a sale/purchase asked for a save, or 60 s underground → GameSaver.Save
   ── Commands.Playback: the particles recorded above are created, expired ones destroyed
 OnUpdate (game)           ESC → MineScene.Save(), Stop()
 Scenes.Render → MineScene.OnRender → Presentation.Update(dt)
-  SkyRenderSystem → TerrainRenderSystem → HouseRenderSystem → ElevatorRenderSystem → CampRenderSystem → DynamiteRenderSystem
+  InterpolationSystem → SkyRenderSystem → TerrainRenderSystem → HouseRenderSystem → ElevatorRenderSystem → CampRenderSystem → DynamiteRenderSystem
   → ParticleRenderSystem
   → MinerRenderSystem → FloatingTextRenderSystem → PromptRenderSystem → HudSystem → InventorySystem
 Display                   the frame goes to the console in one write

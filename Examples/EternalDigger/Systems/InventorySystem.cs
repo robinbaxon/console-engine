@@ -11,12 +11,13 @@ namespace EternalDigger.Systems;
 /// <summary>
 /// The inventory screen: <c>TAB</c> opens and closes a panel in the middle of the screen with everything the miner
 /// carries (gold, ladders, oil and flasks, dynamite, the bag with its weight and worth), the upgrade tiers, the lift and
-/// the rare finds ever dug up. While it is open the game is paused: every <paramref name="simulation"/> system is
-/// disabled, so nothing moves and no oil burns; drawing goes on. Runs last in Presentation, over the HUD. The lines are
-/// rebuilt only when a shown value changes. In 24-bit colour the panel's fill is see-through
-/// (<see cref="PanelFill.Prompt"/>), so the paused mine shows faintly behind it.
+/// the rare finds ever dug up. While it is open the game is paused: every <paramref name="simulation"/> and
+/// <paramref name="fixedSimulation"/> (physics) system is disabled, so nothing moves and no oil burns; drawing goes
+/// on. Runs last in Presentation, over the HUD. The lines are rebuilt only when a shown value changes. In 24-bit colour
+/// the panel's fill is see-through (<see cref="PanelFill.Prompt"/>), so the paused mine shows faintly behind it.
 /// </summary>
-public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGroup simulation) : EntitySystem
+public sealed class InventorySystem(
+    Canvas canvas, Elevator elevator, SystemGroup simulation, SystemGroup fixedSimulation = null) : EntitySystem
 {
     //**********************************************************
     //** fields
@@ -78,9 +79,9 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
     public void Toggle()
     {
         IsOpen = !IsOpen;
-        var systems = simulation.RunOrder;
-        for (var i = 0; i < systems.Count; i++)
-            systems[i].Enabled = !IsOpen;
+        Enable(simulation, !IsOpen);
+        if (fixedSimulation != null)
+            Enable(fixedSimulation, !IsOpen);
     }
 
     /// <summary>Draws the panel for the miner, centred on the screen.</summary>
@@ -101,7 +102,8 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
             if (x >= paused && x < paused + PausedText.Length)
                 canvas.DrawPanel(left + x, top + height - 1, PausedText[x - paused], ConsoleColor.Gray, PanelFill.Prompt);
             else
-                canvas.DrawPanel(left + x, top + height - 1, corner ? x == 0 ? '╚' : '╝' : '═', Frame, PanelFill.Prompt);
+                canvas.DrawPanel(left + x, top + height - 1, corner ? x == 0 ? '╚' : '╝' : '═', Frame,
+                    PanelFill.Prompt);
         }
 
         canvas.Draw(left + 2, top, Title, ConsoleColor.Black, Frame);
@@ -133,6 +135,13 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
             };
             canvas.DrawPanel(left + 1 + i, y, character, color, PanelFill.Prompt);
         }
+    }
+
+    private static void Enable(SystemGroup group, bool enabled)
+    {
+        var systems = group.RunOrder;
+        for (var i = 0; i < systems.Count; i++)
+            systems[i].Enabled = enabled;
     }
 
     /// <summary>Rebuilds the lines when anything they show has changed. Allocates only then.</summary>

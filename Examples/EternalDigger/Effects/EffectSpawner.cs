@@ -1,6 +1,7 @@
 using System;
 using ConsoleEngine.Ecs;
 using ConsoleEngine.Ecs.Components;
+using ConsoleEngine.Physics;
 using EternalDigger.Components;
 using EternalDigger.Mining;
 using Microsoft.Xna.Framework;
@@ -27,6 +28,23 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
     private const int BlastRubble = 150;
     private const int BlastChunks = 40;
     private const int BlastDust = 40;
+
+    /// <summary>Of a blast's <see cref="BlastChunks"/>, how many are rubble bodies; the rest are debris particles.</summary>
+    public const int BlastRubbleBodies = 12;
+
+    /// <summary>Of a tile break's chunks, how many (at least, at most) are rubble bodies.</summary>
+    public const int BreakRubbleMin = 4;
+    public const int BreakRubbleMax = 6;
+
+    /// <summary>Gravity of the physics world, in cells/s² down: the same pull as debris particles.</summary>
+    public const float RubbleGravity = DebrisGravity;
+
+    /// <summary>Half the width and height of a rubble body in cells: a chunk fills most of its cell.</summary>
+    public const float RubbleHalfSize = .45f;
+
+    /// <summary>How far past the blast area (in cells) its shockwave pushes rubble, and how hard at the centre.</summary>
+    private const float ShockwaveReach = 8f;
+    private const float ShockwaveSpeed = 30f;
 
     /// <summary>The light of a blast: hot white, reaching this many tiles past the blast's own radius.</summary>
     public const uint BlastGlowColor = 0xFFE8B0;
@@ -83,16 +101,23 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
         Shake.Add(.15f);
     }
 
-    /// <summary>The tile broke: a burst of chunks, a dust cloud and a small shake. Ore adds glitter.</summary>
+    /// <summary>
+    /// The tile broke: a burst of chunks, a dust cloud and a small shake. Ore adds glitter. The first 4–6 chunks are
+    /// rubble bodies (<see cref="Rubble"/>) that tumble and stay; the rest are debris particles.
+    /// </summary>
     public void TileBreak(CommandBuffer commands, int column, int row, TileType type)
     {
         var center = Layout.TileCenter(column, row);
         var style = ParticleLooks.DebrisStyle(type);
         var chunks = random.Next(14, 23);
+        var bodies = random.Next(BreakRubbleMin, BreakRubbleMax + 1);
         for (var i = 0; i < chunks; i++)
         {
             var velocity = RandomDirection(8f, 28f) - new Vector2(0f, Range(4f, 10f));
-            Debris(commands, center + RandomOffset(1.5f, .8f), velocity, style, Range(.8f, 1.6f));
+            if (i < bodies)
+                Rubble(commands, center + RandomOffset(1.4f, .5f), velocity, style);
+            else
+                Debris(commands, center + RandomOffset(1.5f, .8f), velocity, style, Range(.8f, 1.6f));
         }
 
         var dust = random.Next(6, 11);
@@ -140,7 +165,8 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
     /// <summary>
     /// A blast around a tile: one frame of full-tile flash over the area, a ring of rubble and chunks, lingering dust
     /// and a big shake, plus a white <see cref="Glow"/> that lights the area and dies away in 0.6 s.
-    /// <paramref name="radius"/> is in tiles (1 = 3 x 3).
+    /// <see cref="BlastRubbleBodies"/> of the stone chunks are rubble bodies, and a <see cref="Shockwave"/> throws the
+    /// rubble already lying around. <paramref name="radius"/> is in tiles (1 = 3 x 3).
     /// </summary>
     public void Blast(CommandBuffer commands, int column, int row, int radius)
     {
@@ -161,8 +187,17 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
         }
 
         for (var i = 0; i < BlastChunks; i++)
-            Debris(commands, center + RandomOffset(3f, 1.5f), RandomDirection(10f, 30f), ParticleStyle.Stone,
-                Range(.8f, 1.6f));
+        {
+            if (i < BlastRubbleBodies)
+                Rubble(commands, center + RandomOffset(3f, 1.5f), RandomDirection(10f, 30f) - new Vector2(0f, 6f),
+                    ParticleStyle.Stone);
+            else
+                Debris(commands, center + RandomOffset(3f, 1.5f), RandomDirection(10f, 30f), ParticleStyle.Stone,
+                    Range(.8f, 1.6f));
+        }
+
+        commands.Create(new Position(center),
+            new Shockwave((radius + .5f) * Layout.TileWidth + ShockwaveReach, ShockwaveSpeed));
 
         for (var i = 0; i < BlastDust; i++)
             Spawn(commands, center + RandomOffset(5f, 2.5f), RandomDirection(1f, 5f), ParticleStyle.Dust, Range(1f, 2f),
@@ -310,6 +345,33 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
             Spawn(commands, center, velocity, ParticleStyle.Pop, Range(.35f, .5f), 0f, 4f);
         }
     }
+
+    /// <summary>
+    /// One rubble body: a <see cref="RubbleHalfSize"/> box that tumbles (<see cref="Rotation"/>,
+    /// <see cref="AngularVelocity"/>), collides with the mine's tiles and other rubble, can be pushed (<see cref="Force"/>)
+    /// and is drawn between physics steps (<see cref="Interpolation"/>). Lives 20–30 s.
+    /// </summary>
+    public void Rubble(CommandBuffer commands, Vector2 position, Vector2 velocity, ParticleStyle style)
+    {
+        var variant = RandomVariant();
+        var rubble = new Rubble(style, variant, Range(20f, 30f));
+        var body = commands.Create(
+            new Position(position),
+            new Velocity(velocity),
+            new Rotation(random.NextSingle() * MathF.Tau),
+            new AngularVelocity(Range(-8f, 8f)),
+            RigidBody.Dynamic(1f, 1f, .1f, .8f),
+            Collider.Box(new Vector2(RubbleHalfSize)) with { Friction = .8f, Restitution = .15f });
+        commands.Add(body, new Glyph('■', ParticleLooks.Color(style, variant, 0f)));
+        commands.Add(body, rubble);
+        commands.Add(body, new Force());
+        commands.Add(body, new Interpolation());
+        commands.Add(body, new RenderOffset());
+    }
+
+    /// <summary>One puff where the miner kicks a rubble apart.</summary>
+    public void RubbleDust(CommandBuffer commands, Vector2 position) =>
+        Spawn(commands, position, RandomDirection(2f, 6f), ParticleStyle.Dust, Range(.3f, .5f), 0f, 3f);
 
     /// <summary>Floating text of any <see cref="FloatingTextKind"/> that drifts up.</summary>
     public void Text(CommandBuffer commands, Vector2 position, FloatingTextKind kind, int amount) =>

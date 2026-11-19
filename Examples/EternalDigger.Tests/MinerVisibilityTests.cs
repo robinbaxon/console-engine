@@ -3,6 +3,7 @@ using ConsoleEngine.Ecs;
 using ConsoleEngine.Ecs.Components;
 using ConsoleEngine.Ecs.Rendering;
 using ConsoleEngine.Infrastructure.Rendering;
+using ConsoleEngine.Physics;
 using EternalDigger.Components;
 using EternalDigger.Effects;
 using EternalDigger.Mining;
@@ -16,7 +17,8 @@ namespace EternalDigger.Tests;
 
 /// <summary>
 /// Digs the toughest tile frame by frame with the real particle systems and renderers, and reads the frame buffer
-/// back after every frame: the miner's face and lamp must always be on screen, and no particle on his cells.
+/// back after every frame: the miner's face and lamp must always be on screen, and no particle or rubble on his cells.
+/// Rubble runs on the real physics, one fixed step per frame as in <c>MineScene</c>.
 /// </summary>
 public class MinerVisibilityTests
 {
@@ -52,10 +54,15 @@ public class MinerVisibilityTests
         _motion = new MinerMotionSystem(_mine, effects);
 
         _simulation = new SystemGroup(_world);
+        var physics = new PhysicsSystem { Gravity = new Vector2(0f, EffectSpawner.RubbleGravity) };
+        _simulation.Add(new RubbleGridSystem(new RubbleGrid(_mine), physics, _camera));
+        _simulation.Add(new ShockwaveSystem());
+        _simulation.Add(physics);
         _simulation.Add(new LightingSystem(_mine, light, _camera, new Headlamp()));
         _simulation.Add(new DynamiteSystem(_mine, effects));
         _simulation.Add(new ParticlePhysicsSystem(_mine));
         _simulation.Add(new ParticleLifetimeSystem());
+        _simulation.Add(new RubbleSystem(_camera, effects));
 
         _presentation = new SystemGroup(_world);
         _presentation.Add(new ParticleRenderSystem(canvas, _camera, light));
@@ -118,6 +125,7 @@ public class MinerVisibilityTests
 
         Assert.That(_mine.TypeAt(Column + 1, Row), Is.EqualTo(TileType.Air), "the blast went off");
         Assert.That(mostParticles, Is.GreaterThan(200), "a blast is hundreds of particles");
+        Assert.That(_world.Query(Query.With<Rubble>()).Count, Is.GreaterThan(0), "and rubble bodies");
     }
 
     [Test]

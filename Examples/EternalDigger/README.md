@@ -90,8 +90,9 @@ The original design contract the game was built from is in
 
 - **Project:** `Examples/EternalDigger/EternalDigger.csproj` (exe), tests in `Examples/EternalDigger.Tests`.
 - **Engine features used:** `GameBase`, `EcsScene<TGame>`, `World`, `Query`, `EntitySystem`, `CommandBuffer`, the
-  `Position`/`Velocity`/`Glyph` components, `Camera`, `RenderConsole`, `Input`.
+  `Position`/`Velocity`/`Glyph` components, `Camera`, `RenderConsole`, `Input`, 24-bit colour, and
+  `ConsoleEngine.Physics` (`PhysicsSystem`, `TileGrid`, sleeping, `Force`, interpolation) for rubble chunks.
 - **Not entities:** the terrain. The mine is a plain grid (`Mining/Mine.cs`) that is drawn from the rows the camera
-  can see, so an endless mine costs nothing per frame. Entities are the miner, particles and floating numbers.
-- **Status:** builds with 0 warnings, 340 tests pass. It has been run in a macOS terminal, but has not been played with
+  can see, so an endless mine costs nothing per frame. Entities are the miner, particles, rubble bodies and floating numbers.
+- **Status:** builds with 0 warnings, 363 tests pass. It has been run in a macOS terminal, but has not been played with
   a real keyboard or checked in the Windows console. See [Known limitations](docs/gameplay.md#known-limitations).

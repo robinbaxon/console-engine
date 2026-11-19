@@ -18,6 +18,7 @@ public class InventorySystemTests
     private RenderConsole _console;
     private InventorySystem _inventory;
     private ParticleLifetimeSystem _someSystem;
+    private ShockwaveSystem _fixedSystem;
 
     [SetUp]
     public void SetUp()
@@ -25,9 +26,12 @@ public class InventorySystemTests
         _world = new World();
         _simulation = new SystemGroup(_world);
         _someSystem = _simulation.Add(new ParticleLifetimeSystem());
+        var fixedSimulation = new SystemGroup(_world);
+        _fixedSystem = fixedSimulation.Add(new ShockwaveSystem());
         _console = new RenderConsole(new FakeConsoleHandler(Layout.ScreenWidth, Layout.ScreenHeight));
         var presentation = new SystemGroup(_world);
-        _inventory = presentation.Add(new InventorySystem(new Canvas(_console), new Elevator(), _simulation));
+        _inventory = presentation.Add(new InventorySystem(new Canvas(_console), new Elevator(), _simulation,
+            fixedSimulation));
     }
 
     [TearDown]
@@ -40,6 +44,7 @@ public class InventorySystemTests
 
         Assert.That(_inventory.IsOpen, Is.True);
         Assert.That(_someSystem.Enabled, Is.False);
+        Assert.That(_fixedSystem.Enabled, Is.False, "rubble physics pauses too");
     }
 
     [Test]
@@ -50,6 +55,7 @@ public class InventorySystemTests
 
         Assert.That(_inventory.IsOpen, Is.False);
         Assert.That(_someSystem.Enabled, Is.True);
+        Assert.That(_fixedSystem.Enabled, Is.True);
     }
 
     [Test]

@@ -5,6 +5,7 @@ using ConsoleEngine.Ecs.Rendering;
 using EternalDigger.Components;
 using EternalDigger.Effects;
 using EternalDigger.Rendering;
+using Microsoft.Xna.Framework;
 
 namespace EternalDigger.Systems;
 
@@ -15,7 +16,9 @@ namespace EternalDigger.Systems;
 /// particles are drawn, in their darker colour, so his face and lamp stay the brightest characters there. In 24-bit
 /// colour (<see cref="Canvas.IsTrueColor"/>) mist and gas shimmer (<see cref="ParticleLooks.IsTint"/>) are not glyphs
 /// but see-through tints over three cells in a row (<see cref="Canvas.Tint"/>), fading in and out with their life; near
-/// the miner a tint is half as strong, and never on his cells.
+/// the miner a tint is half as strong, and never on his cells. Rubble bodies (<see cref="Rubble"/>) are drawn the same way,
+/// at their interpolated place (<c>RenderOffset</c>), skipped in the dark and dimmed in dim light, and they count
+/// towards the cap around the miner.
 /// </summary>
 public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap light) : EntitySystem
 {
@@ -27,6 +30,7 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
     public const int NearMinerCap = 6;
 
     private Query _particles;
+    private Query _rubble;
     private Query _miners;
 
     //**********************************************************
@@ -36,6 +40,7 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
     protected override void OnCreate()
     {
         _particles = World.Query(Query.With<Particle, Position, Glyph>());
+        _rubble = World.Query(Query.With<Rubble, Position, Glyph>());
         _miners = World.Query(Query.With<Miner, Position>());
     }
 
@@ -85,6 +90,41 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
                     canvas.DrawOver(x, y, glyphs[i].Character, color);
             }
         }
+
+        foreach (var chunk in _rubble.GetChunks())
+        {
+            var positions = chunk.GetSpan<Position>();
+            var glyphs = chunk.GetSpan<Glyph>();
+            var offsets = chunk.Has<RenderOffset>() ? chunk.GetSpan<RenderOffset>() : default;
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var world = positions[i].Value + (offsets.IsEmpty ? Vector2.Zero : offsets[i].Position);
+                var level = LightAt(world.X, world.Y);
+                if (level == LightMap.Dark)
+                    continue;
+
+                var x = (int)MathF.Floor(world.X - cameraPosition.X);
+                var y = (int)MathF.Floor(world.Y - cameraPosition.Y);
+                var color = level == LightMap.Dim ? Dim(glyphs[i].Foreground) : glyphs[i].Foreground;
+                if (hasMiner)
+                {
+                    var dx = x - miner.X;
+                    var dy = y - miner.Y;
+                    if (IsOnMiner(dx, dy))
+                        continue;
+
+                    if (IsNearMiner(dx, dy))
+                    {
+                        if (++nearMiner > NearMinerCap)
+                            continue;
+
+                        color = Dim(color);
+                    }
+                }
+
+                canvas.DrawOver(x, y, glyphs[i].Character, color);
+            }
+        }
     }
 
     //**********************************************************
@@ -126,9 +166,10 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
 
     private static bool NeedsLight(ParticleStyle style) => style is ParticleStyle.Dust or ParticleStyle.Mist;
 
-    private bool IsDark(float worldX, float worldY) =>
-        light.Get((int)MathF.Floor(worldX / Layout.TileWidth), (int)MathF.Floor(worldY / Layout.TileHeight)) ==
-        LightMap.Dark;
+    private bool IsDark(float worldX, float worldY) => LightAt(worldX, worldY) == LightMap.Dark;
+
+    private byte LightAt(float worldX, float worldY) =>
+        light.Get((int)MathF.Floor(worldX / Layout.TileWidth), (int)MathF.Floor(worldY / Layout.TileHeight));
 
     /// <summary>The miner's top-left screen cell, drawn the same way as in <see cref="MinerRenderSystem"/>.</summary>
     private (int X, int Y) MinerScreenCell(out bool found)

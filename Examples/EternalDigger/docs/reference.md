@@ -40,15 +40,18 @@ Examples/EternalDigger/
 │   ├── TileCell.cs             one tile: Type, Damage, HasLadder, Seen, HasGas
 │   ├── GasPockets.cs           gas pockets: TryFindNear, Ignite (flood fill, preallocated), Burned
 │   ├── TileChange.cs           a saved tile: Column, Row, Cell
+│   ├── RubbleGrid.cs           the physics tiles: a TileGrid window of 64 rows around the screen; Follow, Sync,
+│   │                           ShouldClear, ShouldWake, TileOf
 │   └── Elevator.cs             the lift: TryBuild, Send, Update, landings, car, Restore; ElevatorBuild
 │   ├── DigResult.cs            what a hit did: DigOutcome (Nothing, Damaged, Broken), Type, Hits
 ├── Components/
 │   ├── Miner.cs                the player: grid position, motion, lamp, dig timers, dynamite, inventory
 │   ├── Dynamite.cs             a planted, lit stick: Column, Row, Fuse, SparkTimer
-│   └── Particle.cs             Particle, ParticleStyle, Physics, TileCollider, Mist, FloatingText
-├── Systems/                    27 systems, listed below
+│   ├── Particle.cs             Particle, ParticleStyle, Physics, TileCollider, Mist, FloatingText
+│   └── Rubble.cs               Rubble (a chunk body's age and look), Shockwave (a blast's push)
+├── Systems/                    31 systems, listed below
 ├── Effects/
-│   ├── EffectSpawner.cs        creates every particle and floating number
+│   ├── EffectSpawner.cs        creates every particle, rubble body and floating number
 │   ├── ParticleLooks.cs        characters and colours per style over a lifetime; GlyphAt
 │   └── ScreenShake.cs          shake strength: Add, Update
 ├── Rendering/
@@ -67,6 +70,14 @@ Examples/EternalDigger/
 
 ## Systems, in run order
 
+### Fixed simulation (`MineScene.FixedSimulation`, 60 Hz)
+
+| # | System | Constructor | Queries | Does |
+|---|---|---|---|---|
+| 1 | `RubbleGridSystem` | `RubbleGrid`, `PhysicsSystem`, `Camera` | `Rubble, Position, RigidBody` | `RubbleGrid.Follow` the screen rows, `Sync`, sets `PhysicsSystem.TileGrid`; wakes rubble beside changed tiles, destroys rubble in tiles that turned solid or got a ladder |
+| 2 | `ShockwaveSystem` | — | `Shockwave, Position`; `Rubble, Position, RigidBody, Force` | Pushes rubble within a shockwave's radius (not rubble younger than 0.1 s), destroys the shockwave |
+| 3 | `PhysicsSystem` (engine) | `Gravity` (0, 40) | bodies | Steps the rubble bodies against the tiles |
+
 ### Simulation (`MineScene.Simulation`)
 
 | # | System | Constructor | Queries | Does |
@@ -84,6 +95,7 @@ Examples/EternalDigger/
 | 11 | `MistSystem` | `Mine`, `LightMap`, `Camera`, `EffectSpawner`, `Random` | `Mist` | Keeps up to 40 mist particles in lit caves |
 | 12 | `ParticlePhysicsSystem` | `Mine` | `Particle, Position, Velocity, Physics` | Gravity, drag, movement, landing on rock (`TileCollider`) |
 | 13 | `ParticleLifetimeSystem` | — | `Particle, Glyph` | Ages particles, sets their glyph, destroys expired ones |
+| 13a | `RubbleSystem` | `Camera`, `EffectSpawner` | `Rubble, Position, Glyph, Rotation`; `Miner, Position` | Ages rubble, sets its glyph (`GlyphOf`), destroys it when old, more than 4 rows off screen, on the miner's cells or the tile he moves into (with a dust puff), and the oldest over `MaxRubble` |
 | 14 | `GlowSystem` | — | `Glow` | Ages glows, destroys expired ones |
 | 15 | `FloatingTextSystem` | — | `FloatingText, Position, Velocity` | Moves floating texts up, destroys expired ones |
 | 16 | `SaveSystem` | `GameSaver` | `Miner` | Saves on request, or after `GameSaver.AutosaveInterval` s underground |
@@ -92,18 +104,19 @@ Examples/EternalDigger/
 
 | # | System | Constructor | Queries | Draws |
 |---|---|---|---|---|
+| 0 | `InterpolationSystem` (engine) | `FixedTimestep` | `Interpolation, RenderOffset` | Sets each rubble's `RenderOffset` between its last two steps |
 | 1 | `SkyRenderSystem` | `Canvas`, `Camera` | — | Sky, sun, clouds, hills |
 | 2 | `TerrainRenderSystem` | `Canvas`, `Camera`, `Mine`, `LightMap` | — | Tiles by light, ladders, cracks, grass |
 | 3 | `HouseRenderSystem` | `Canvas`, `Camera` | `Miner` | House (flag, lit windows, second floor by gold earned), sign, smoke, trophy case, shop, tool shop stall and toolsmith, mine frame with the `RECORD` plank, `LIFT` sign |
 | 4 | `ElevatorRenderSystem` | `Canvas`, `Camera`, `Elevator` | — | Shaft walls and braces, cable, car, speed lines |
 | 5 | `CampRenderSystem` | `Canvas`, `Camera` | `Miner` | The deep camp once bought: tent, lantern, `CAMP` plank, crate |
 | 6 | `DynamiteRenderSystem` | `Canvas`, `Camera` | `Dynamite` | Planted sticks `¡` and their flickering `*` fuse |
-| 7 | `ParticleRenderSystem` | `Canvas`, `Camera`, `LightMap` | `Particle, Position, Glyph`; `Miner, Position` | Particles (dust and mist only where lit; none on the miner, capped and dimmed around him; 24-bit: mist and gas as tints) |
+| 7 | `ParticleRenderSystem` | `Canvas`, `Camera`, `LightMap` | `Particle, Position, Glyph`; `Rubble, Position, Glyph`; `Miner, Position` | Particles (dust and mist only where lit; none on the miner, capped and dimmed around him; 24-bit: mist and gas as tints); rubble at its interpolated place, not in the dark, dimmed in dim light |
 | 8 | `MinerRenderSystem` | `Canvas`, `Camera`, `Headlamp` | `Miner, Position` | The miner and lamp glow, over the particles |
 | 9 | `FloatingTextRenderSystem` | `Canvas`, `Camera` | `FloatingText, Position` | `+150g` / `-10g` / `ELEVATOR +10m` / `TOO HARD` |
 | 10 | `PromptRenderSystem` | `Canvas`, `Camera`, `Mine`, `Elevator`, `ShopCounter` (surface), `ShopCounter` (camp) | `Miner, Position` | Door, shop, camp counter, lift sign and landing prompts, dynamite hints |
 | 11 | `HudSystem` | `Canvas`, `GameSaver`, `Elevator` | `Miner` | Rows 0–1, the save hint |
-| 12 | `InventorySystem` | `Canvas`, `Elevator`, `SystemGroup` (the Simulation) | `Miner` | `TAB` toggles; while open the Simulation systems are disabled (paused) and a centred panel lists gold, ladders, oil, flasks, dynamite, lift, the bag (count × price = worth, weight/capacity), upgrade pips and finds ever found |
+| 12 | `InventorySystem` | `Canvas`, `Elevator`, `SystemGroup` (the Simulation), `SystemGroup` (the FixedSimulation) | `Miner` | `TAB` toggles; while open the Simulation and FixedSimulation systems are disabled (paused) and a centred panel lists gold, ladders, oil, flasks, dynamite, lift, the bag (count × price = worth, weight/capacity), upgrade pips and finds ever found |
 
 ## Components
 
@@ -115,15 +128,20 @@ Examples/EternalDigger/
 | `TileCollider` | tag | Debris, coins |
 | `Mist` | tag | Mist |
 | `Dynamite` | `Column`, `Row`, `Fuse`, `SparkTimer` | A planted stick (with `Position`) |
+| `Rubble` | `Age`, `Lifetime` (20–30 s), `Style` (the tile's debris `ParticleStyle`), `Variant` | A rubble body, with the physics components |
+| `Shockwave` | `Radius` (cells), `Speed` (cells/s at the centre) | A blast's push (with `Position`), for one fixed step |
+| `RigidBody`, `Collider`, `AngularVelocity`, `Force`, `Interpolation` | physics components (`ConsoleEngine.Physics`): dynamic, mass 1, box half-size 0.45, friction 0.8, restitution 0.15 | Rubble |
 | `FloatingText` | `Kind` (`FloatingTextKind`: `Gold`, `Elevator`, `TooHard`, `RareFind`), `Amount`, `Age`, `Lifetime` | Floating texts |
-| `Position`, `Velocity`, `Glyph` | engine components (`ConsoleEngine.Ecs.Components`) | Miner (`Position` only), particles, numbers (no `Glyph`) |
+| `Position`, `Velocity`, `Glyph`, `Rotation`, `RenderOffset` | engine components (`ConsoleEngine.Ecs.Components`) | Miner (`Position` only), particles, numbers (no `Glyph`), rubble (all) |
 
 ## Services
 
 | Service | Created in | Used by | Key members |
 |---|---|---|---|
 | `Mine` | `MineScene` | control, motion, light, glints, mist, particle physics, terrain, saving | `At`, `TypeAt`, `IsSolid`, `HasLadder`, `IsSupported`, `Hit`, `TryPlaceLadder`, `CollectChanges`, `Apply`, `WallBottomDepth`, `Noise`, `GeneratedRows`; static `Depth`, `IsInside` |
-| `EffectSpawner` | `MineScene` | control, interaction, motion, glints, mist | `DigHit`, `Clank`, `TileBreak`, `RareFind`, `Pulse`, `PlantDynamite`, `FuseSpark`, `Blast`, `ClimbTrail`, `FootDust`, `LandingDust`, `Glint`, `Mist`, `Coins`, `Pop`, `Number`, `Shake` |
+| `EffectSpawner` | `MineScene` | control, interaction, motion, glints, mist | `DigHit`, `Clank`, `TileBreak`, `Rubble`, `RubbleDust`, `RareFind`, `Pulse`, `PlantDynamite`, `FuseSpark`, `Blast`, `ClimbTrail`, `FootDust`, `LandingDust`, `Glint`, `Mist`, `Coins`, `Pop`, `Number`, `Shake` |
+| `RubbleGrid` | `MineScene` | `RubbleGridSystem` | `Follow`, `Sync`, `Tiles`, `FirstRow`, `Moves`, `Contains`, `ShouldClear`, `ShouldWake`, `TileOf`; `Rows` 64, `Margin` 4 |
+| `PhysicsSystem` (engine) | `MineScene` | `RubbleGridSystem` sets its `TileGrid` | `Gravity`, `TileGrid`, `BodyCount`, `SleepingBodyCount` |
 | `ScreenShake` | `MineScene` (inside `EffectSpawner`) | `EffectSpawner`, `CameraSystem` | `Add`, `Update`, `Strength` |
 | `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `AddLight`, `Get`, `Intensity`, `LightColor`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright`, `IntensitySteps` |
 | `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawRgb`, `DrawOver`, `Tint`, `DrawGlass`, `DrawPanel`, `BackgroundAt`, `BackgroundRgbAt`, `ForegroundRgbAt`, `IsTrueColor`, `Width`, `Height` |
@@ -205,6 +223,11 @@ Static rule classes: `Tiles`, `Shop`, `Upgrades`, `Layout`, `TileLooks`, `Partic
 | `ParticleLooks.GasTint` / `GasPeakAlpha` | `0x5CD040` / 0.4 | 24-bit: gas shimmer tint |
 | `PanelFill.Prompt` | dark blue; `0x0A1636` at 0.8 | Fill of the prompt boxes and the inventory: 16 colours; 24-bit see-through |
 | `MistSystem.MaxMist` | 40 | Mist particles at most |
+| `RubbleSystem.MaxRubble` / `ScreenMargin` / `FadeSeconds` | 80 / 4 rows / 1.5 s | Rubble bodies at most (oldest go first); rows off screen before rubble is destroyed; the faded `·` at the end |
+| `EffectSpawner.BreakRubbleMin`…`BreakRubbleMax` / `BlastRubbleBodies` | 4–6 / 12 | Rubble bodies per tile break / per blast |
+| `EffectSpawner.RubbleGravity` / `RubbleHalfSize` | 40 cells/s² / 0.45 cells | Physics gravity; a rubble box's half size |
+| `ShockwaveSystem.NewbornSeconds` | 0.1 s | Rubble younger than this isn't pushed (thrown by the same blast) |
+| `RubbleGrid.Rows` / `Margin` | 64 / 4 rows | The physics tile window; rows kept beyond the screen before it moves |
 | `ParticleRenderSystem.NearMinerCap` | 6 | Particles drawn per frame in the one-tile ring around the miner |
 | `ScreenShake.MaxStrength` / `Decay` | 2 cells / 6 per s | Shake cap and fade |
 | `GameSaver.AutosaveInterval` | 60 s | Time underground between autosaves (0 = off) |
