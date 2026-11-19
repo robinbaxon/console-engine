@@ -71,8 +71,9 @@ tiles as the oil runs low, 0 when it is empty (`LampOil.Reach`).
 The "solid tile on the line" test samples the ray 4 times per tile (`RaySamplesPerTile`) and skips the lamp's own
 tile and the target. It runs only for tiles inside the cone and range, so a frame costs a few thousand tile lookups.
 
-The deep camp's lantern adds light after `Compute`: `LightMap.AddLantern` raises tiles within 2.6 tiles to `Lit` and
-within 3.9 to `Dim` (walls don't block it) and marks them seen. Below the wall the reach is 2 tiles shorter, and in
+Coloured point lights are added after `Compute` with `LightMap.AddLight(mine, PointLight)` (see
+[Point lights](#point-lights)): each raises tiles within its radius to `Lit` and within 1.5 × the radius to `Dim`
+(walls don't block it) and marks them seen. Below the wall the reach is 2 tiles shorter, and in
 black damp it is then halved (`LampOil.DarkReach`); lit rock touching black damp is drawn as dark-grey `░`
 (`TileLooks.BlackDampEdge`).
 
@@ -81,17 +82,36 @@ mist in lit tiles, and `GlintSystem` makes ore in the dark glint more. All of th
 
 ### Smooth light (24-bit colour)
 
-Next to the level, `Compute` stores a smooth `Intensity(column, row)` (0–1) and `IsWarm(column, row)` per tile, which
-only the 24-bit terrain uses:
+Next to the level, `Compute` stores a smooth `Intensity(column, row)` (0–1) and a `LightColor(column, row)` (red,
+green and blue, 0–1 each) per tile, which only the 24-bit terrain uses:
 
-| Source | Intensity | Warm |
+| Source | Intensity | Light colour |
 |---|---|---|
-| Daylight | 1 at the surface; 0.6 / 0.4 / 0.3 at depth 1 / 2 / 3 (same tiles as the levels) | No |
-| Lamp | 1 within `NearRadius`; else `min(1, 1.25 − distance / reach)`, so 0.75 / 0.5 / 0.25 where the levels change from bright / lit / dim; × 0.7–1 towards the cone's edge (`ConeEdgeShare`, full from a third of the way in); × 0.8 in a flicker frame (`FlickerShare`), × 0.5 with an empty lamp (`EmptyLampShare`) | When it is brighter than daylight |
-| Lantern (`AddLantern`) | 0.8 at the centre, 0.55 at the radius, 0.25 at 1.5 × the radius; raises a tile, never lowers it | Yes |
+| Daylight | 1 at the surface; 0.6 / 0.4 / 0.3 at depth 1 / 2 / 3 (same tiles as the levels) | White × intensity |
+| Lamp | 1 within `NearRadius`; else `min(1, 1.25 − distance / reach)`, so 0.75 / 0.5 / 0.25 where the levels change from bright / lit / dim; × 0.7–1 towards the cone's edge (`ConeEdgeShare`, full from a third of the way in); × 0.8 in a flicker frame (`FlickerShare`), × 0.5 with an empty lamp (`EmptyLampShare`) | `LightMap.LampColor` (1, 0.86, 0.62: a warm oil flame) × intensity |
+| Point light (`AddLight`) | `Strength` at the centre, 0.69 × that at the radius, 0.31 × that at 1.5 × the radius; raises a tile's intensity, never lowers it | Its colour × its intensity, **added** to the tile's (each channel at most 1) |
 
-The brighter of daylight and lamp wins. Every intensity is rounded to 1/32 (`IntensitySteps`), so a tile's colour
-changes in visible steps rather than every frame as the light glides with the miner, and fewer console rows change.
+Between daylight and lamp the brighter one wins, with its colour. Every intensity and colour channel is rounded to
+1/32 (`IntensitySteps`), so a tile's colour changes in visible steps rather than every frame as the light glides with
+the miner, and fewer console rows change.
+
+### Point lights
+
+`LightingSystem` adds these after the lamp each frame (`Rendering/PointLight.cs`: centre in tiles, radius, colour,
+strength). A point light at least 0.55 bright on a tile makes it `Lit`, any less `Dim`, so they also brighten the
+16-colour look, let mist spawn there and mark tiles seen.
+
+| Light | Where | Colour | Strength / radius | Source |
+|---|---|---|---|---|
+| Camp lantern | `DeepCamp.LanternCenter`, once bought | `0xFFB060` orange (`LightingSystem.LanternColor`) | 0.8 / 2.6 tiles (`LanternStrength`, `DeepCamp.LanternRadius`) | `Miner.HasDeepCamp` |
+| Fuse | The stick's tile centre, while it burns | `0xFF7A30` red-orange (`FuseColor`) | 0.6 ± 0.15, flickering with the fuse time (`FuseFlicker`, `FuseFlickerSpeed`) / 1.2 tiles | every `Dynamite` entity |
+| Blast | The blast's centre | `0xFFE8B0` hot white (`EffectSpawner.BlastGlowColor`) | 1 / blast radius + 2.5 tiles, fading over 0.6 s | a `Glow` from `EffectSpawner.Blast` |
+| Gas flare | The burning tile | `0xC8F050` yellow-green (`EffectSpawner.GasGlowColor`) | 0.6 / 1.8 tiles over 0.5 s; big (from a blast) 0.9 / 2.5 tiles over 0.7 s | a `Glow` from `EffectSpawner.GasFlare` |
+
+A `Glow` (`Components/Glow.cs`) is an entity with `Position` and `Glow`: colour, strength, radius, age and lifetime.
+Its strength falls with the square of the time left (`Glow.CurrentStrength`), so a flash dies quickly. `GlowSystem`
+ages it and destroys it at the end. A glow is created by the command buffer at the end of the Simulation group, so it
+lights from the next frame.
 
 ## Terrain
 
@@ -137,9 +157,10 @@ characters, specks, cracks and their noise stay the same; the colours come from 
 
 - **Rock:** `TileShade.For(type)` gives a `TileRgb` (texture, fill, speck colour at full light: earthy dirt, grey
   stone, mauve granite, blue slate, teal quartzite, near-black obsidian). Texture and fill are both multiplied by the
-  tile's `Intensity` (`TileShade.Lit`), so the fill fades out with the light instead of dropping to black at `Lit`.
-  Lamp and lantern light is warm: green × 0.86 and blue × 0.62 (`WarmGreen`, `WarmBlue`); daylight keeps the hue.
-- **Ore specks:** `TileShade.Speck` never goes below 35% of its colour (`SpeckFloor`), so a lit vein always stands out.
+  tile's `LightColor`, channel by channel (`TileShade.Lit`), so the fill fades out with the light instead of dropping
+  to black at `Lit`, is warm in lamp light, keeps its hue in daylight and takes on the colour of point lights.
+- **Ore specks:** `TileShade.Speck` lights them with 35% white plus 65% of the tile's light (`SpeckFloor`), so a lit
+  vein always stands out.
 - **Cracks:** black on a fill lit 45% or more (`LightCrackBelow`), light grey on darker rock (`TileShade.Crack`).
 - **Black damp edge:** the `░`, dark grey scaled by the light, on black.
 - **Dark, seen before:** `░` in cool grey `TileShade.Remembered` (`0x4A4E57`) on black; never seen: black.
@@ -283,7 +304,7 @@ flowchart LR
 | `RareFind` | A fossil or relic is dug out | Two `Pop` rings, 10–15 sparks, a floating `FOSSIL!`/`RELIC!` (white), a 0.6 shake |
 | `LampSmoke` | Every 0.45 s while the lamp is low (`LampSystem`) | One `°` puff rising from the lamp |
 | `FuseSpark` | Every 0.07 s while a fuse burns | A yellow spark off the stick top, and one time in three a grey `·˙` smoke wisp rising |
-| `Blast` | A stick goes off | One frame (0.05 s) of `█` white/yellow over all 3 × 3 tiles (72 cells), 150 `▓▒░·` hot rubble flung out in a ring (`TileCollider`), 40 stone chunks, 40 dust puffs living 1–2 s, a full screen shake (`ScreenShake.MaxStrength`). About 300 particles |
+| `Blast` | A stick goes off | One frame (0.05 s) of `█` white/yellow over all 3 × 3 tiles (72 cells), 150 `▓▒░·` hot rubble flung out in a ring (`TileCollider`), 40 stone chunks, 40 dust puffs living 1–2 s, a full screen shake (`ScreenShake.MaxStrength`). About 300 particles, plus a white `Glow` lighting the area ([Point lights](#point-lights)) |
 | `Clank` | The shovel on obsidian | 3–5 sparks from the face, a 0.15 shake, no chunks |
 | `FootDust` | Every other walking step, every climb step below top speed, a placed ladder, a refused `E`/`SPACE` | 1–2 small puffs behind the feet |
 | `LandingDust` | The end of a fall; a rescue | 2 + 2 per row fallen (max 12) puffs to both sides; falls of 3+ rows shake the screen (0.15 per row, max 1.2) |
@@ -292,7 +313,7 @@ flowchart LR
 | `Coins` | A delivery (`InteractionSystem`): one coin per 10g, 3 to 30 | Coins shoot up and rain onto the grass (gravity 45, bounce once), spinning, 1.6–2.4 s |
 | `Pop` | A delivery, a purchase, a rescue | A ring of 8–12 stars, 0.35–0.5 s |
 | `GasShimmer` | `GasSystem`: while fewer than 30 exist, up to 10 per second, over a random gas tile within 9 tiles of the miner | One dark-green `~`/`∙` drifting slowly, 1.5–3 s, drawn in the dark too (`Gas` tag) |
-| `GasFlare` | A gas tile burns (`GasSystem`, or a blast within 3 tiles) | 5–7 (big: 10–14) `✶**+·` fire particles bursting out and rising, yellow → red → dark red, 0.35–0.7 s; shake 0.1 (big 0.25) per tile, plus 0.6 for a lamp flare |
+| `GasFlare` | A gas tile burns (`GasSystem`, or a blast within 3 tiles) | 5–7 (big: 10–14) `✶**+·` fire particles bursting out and rising, yellow → red → dark red, 0.35–0.7 s; shake 0.1 (big 0.25) per tile, plus 0.6 for a lamp flare; a yellow-green `Glow` per tile |
 | `Number` | A delivery (`+<gold>g`), a purchase (`-10g`) | Text drifting up and slowing, 1.4 s, fading after 70% |
 
 ### Screen shake

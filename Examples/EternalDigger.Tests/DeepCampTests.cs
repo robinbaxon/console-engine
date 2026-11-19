@@ -139,13 +139,15 @@ public class DeepCampTests
     }
 
     [Test]
-    public void AddLantern_BuiltCamp_LightsTheCamp()
+    public void Lighting_BuiltCamp_LanternLightsTheCamp()
     {
         var light = new LightMap(Mine.Columns, 30);
         light.Compute(_mine, DeepCamp.Row - 10, 30, new Vector2(2.5f, DeepCamp.Row - 8.5f), Vector2.UnitX);
         Assert.That(light.Get(DeepCamp.FirstColumn, DeepCamp.Row), Is.EqualTo(LightMap.Dark));
 
-        light.AddLantern(_mine, DeepCamp.LanternCenter, DeepCamp.LanternRadius);
+        light.AddLight(_mine,
+            new PointLight(DeepCamp.LanternCenter, DeepCamp.LanternRadius, LightingSystem.LanternColor,
+                LightingSystem.LanternStrength));
 
         Assert.That(light.Get(DeepCamp.FirstColumn, DeepCamp.Row), Is.GreaterThanOrEqualTo(LightMap.Lit));
         Assert.That(_mine.At(DeepCamp.LastColumn, DeepCamp.Row).Seen, Is.True);

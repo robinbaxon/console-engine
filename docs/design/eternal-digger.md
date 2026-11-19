@@ -102,7 +102,8 @@ Simulation:
    smooth (exponential, frame-rate independent), clamped at the top of the sky (`Position.Y >= -HudHeight` so the sky
    starts right below the HUD), X always 0; adds a random shake offset of `Shake.Strength` and decays it. The camera
    position is rounded to whole cells so every renderer maps world to screen the same way.
-5. `LightingSystem(Mine, LightMap, Camera)`: `LightMap.Compute` for the rows on screen from the miner.
+5. `LightingSystem(Mine, LightMap, Camera, Headlamp)`: `LightMap.Compute` for the rows on screen from the miner, then
+   coloured point lights (`LightMap.AddLight`): the camp lantern, burning fuses and `Glow` entities.
 6. `GlintSystem(Mine, LightMap, Camera, EffectSpawner, Random)`: every ~0.08 s picks random ore tiles on screen
    (also dark ones: glints are how ore is found in the dark) within 9 tiles of the miner, spawns a glint on a few.
    Gold glints more often than silver, silver more than copper.
@@ -111,6 +112,7 @@ Simulation:
 8. `ParticlePhysicsSystem(Mine)`: `Velocity.Y += Gravity * dt`, drag, `Position += Velocity * dt`; `TileCollider`
    particles that enter a solid tile are put back on top of it and stop (velocity zero; coins bounce once).
 9. `ParticleLifetimeSystem`: ages particles, writes `Glyph` from `Style`, `Variant` and `Progress`, destroys expired.
+   `GlowSystem` right after it ages and destroys the `Glow`s of blasts and gas flares.
 10. `FloatingTextSystem`: moves floating texts up, ages and destroys them.
 11. `GasSystem(Mine, GasPockets, EffectSpawner, Random)` (Tier 3, runs right after `DynamiteSystem`): gas shimmer and
     flares near a lit lamp.
@@ -216,7 +218,7 @@ double star burst and a floating name when dug out, sold at the door, counted in
 version 10). Building digs out columns 22–24 on rows 109–110 (100 m, right of the shaft, so beside the lift's last
 bottom landing above the wall) and floors them. Its counter (`ShopCounter.CampItems`, the same Up/Down/E controls)
 sells the bag at 70% and ladders, oil, flasks and sticks at ×1.5. `CampRenderSystem` (after `ElevatorRenderSystem`)
-draws a tent with a lantern; `LightMap.AddLantern` lights the camp.
+draws a tent with a lantern; `LightingSystem` adds the lantern as an orange point light (`LightMap.AddLight`).
 
 ## Hazards: gas (Tier 3)
 

@@ -242,14 +242,14 @@ Examples/
   Launcher.Tests/                 LauncherMenuTests, GameLocatorTests
   EternalDigger/                  original ECS digging game (no OOP original): Mining/ (Mine grid, Tiles rules, Elevator),
                                   Components/, Systems/, Effects/ (EffectSpawner, ParticleLooks), Rendering/
-                                  (Canvas, LightMap, TileLooks, Rgb, TileShade: 24-bit colour),
+                                  (Canvas, LightMap, PointLight, TileLooks, Rgb, TileShade: 24-bit colour),
                                   Saving/ (SaveData, SaveFile, GameSaver),
                                   Scenes/ (TitleScene + TitleMenu, MineScene), Layout, Shop, ShopCounter, DeepCamp, Progress, Upgrades,
                                   LampOil, MinerInput.
                                   README.md + docs/ (gameplay, architecture, rendering-and-effects,
                                   working-with-the-code, testing, reference)
-  EternalDigger.Tests/            Mine, Tiles, Shop, LightMap, TileShade, ParticleLooks, frame-by-frame MinerControlSystem,
-                                  MinerVisibility (render), Elevator, Dynamite, ShopCounter, Upgrades, LampOil,
+  EternalDigger.Tests/            Mine, Tiles, Shop, LightMap, TileShade, Glow, ParticleLooks,
+                                  frame-by-frame MinerControlSystem, MinerVisibility (render), Elevator, Dynamite, ShopCounter, Upgrades, LampOil,
                                   BagWeight, SaveFile, SaveSystem, TitleMenu, InventorySystem, DeepCamp, Gas, Darkness and Progress tests, Fakes/ (console handler)
   SkyStack/                       original ECS tower climber (no OOP original): Climbing/ (Tower, Floor, ClimbPhysics,
                                   RunStats, Scroller), Components/Climber, Systems/, Rendering/ (PixelCanvas,

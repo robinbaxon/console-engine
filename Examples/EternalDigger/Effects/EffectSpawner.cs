@@ -28,6 +28,14 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
     private const int BlastChunks = 40;
     private const int BlastDust = 40;
 
+    /// <summary>The light of a blast: hot white, reaching this many tiles past the blast's own radius.</summary>
+    public const uint BlastGlowColor = 0xFFE8B0;
+    private const float BlastGlowReach = 2.5f;
+    private const float BlastGlowLifetime = .6f;
+
+    /// <summary>The light of a burning gas pocket: a sickly yellow-green.</summary>
+    public const uint GasGlowColor = 0xC8F050;
+
     //**********************************************************
     //** props
     //**********************************************************
@@ -131,7 +139,8 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
 
     /// <summary>
     /// A blast around a tile: one frame of full-tile flash over the area, a ring of rubble and chunks, lingering dust
-    /// and a big shake. <paramref name="radius"/> is in tiles (1 = 3 x 3).
+    /// and a big shake, plus a white <see cref="Glow"/> that lights the area and dies away in 0.6 s.
+    /// <paramref name="radius"/> is in tiles (1 = 3 x 3).
     /// </summary>
     public void Blast(CommandBuffer commands, int column, int row, int radius)
     {
@@ -159,6 +168,8 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
             Spawn(commands, center + RandomOffset(5f, 2.5f), RandomDirection(1f, 5f), ParticleStyle.Dust, Range(1f, 2f),
                 -1f, 1f);
 
+        commands.Create(new Position(center),
+            new Glow(BlastGlowColor, 1f, radius + BlastGlowReach, BlastGlowLifetime));
         Shake.Add(ScreenShake.MaxStrength);
     }
 
@@ -252,7 +263,7 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
 
     /// <summary>
     /// A gas tile burning off: fire bursting out of it and rising. A <paramref name="big"/> flare (set off by a blast)
-    /// throws more and further, and shakes harder.
+    /// throws more and further, shakes harder and lights more. Each flare adds a yellow-green <see cref="Glow"/>.
     /// </summary>
     public void GasFlare(CommandBuffer commands, int column, int row, bool big)
     {
@@ -266,6 +277,8 @@ public sealed class EffectSpawner(Random random, ScreenShake shake)
                 2f);
         }
 
+        commands.Create(new Position(center),
+            big ? new Glow(GasGlowColor, .9f, 2.5f, .7f) : new Glow(GasGlowColor, .6f, 1.8f, .5f));
         Shake.Add(big ? .25f : .1f);
     }
 

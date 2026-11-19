@@ -80,6 +80,7 @@ public sealed class MineScene(SaveData start, string savePath) : EcsScene<Eterna
         Simulation.Add(new MistSystem(mine, light, Camera, effects, random));
         Simulation.Add(new ParticlePhysicsSystem(mine));
         Simulation.Add(new ParticleLifetimeSystem());
+        Simulation.Add(new GlowSystem());
         Simulation.Add(new FloatingTextSystem());
         Simulation.Add(new SaveSystem(_saver));
 

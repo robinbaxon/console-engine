@@ -7,7 +7,10 @@ namespace EternalDigger.Rendering;
 /// <summary>
 /// How brightly each tile on screen is lit this frame: daylight near the surface plus the miner's headlamp, a cone
 /// that solid tiles block. Covers a window of rows starting at <see cref="FirstRow"/>; everything outside is
-/// <see cref="Dark"/>. Lit tiles are marked <see cref="TileCell.Seen"/>.
+/// <see cref="Dark"/>. Lit tiles are marked <see cref="TileCell.Seen"/>. Coloured <see cref="PointLight"/>s (the
+/// camp lantern, fuses, blasts, gas flares) are added on top with <see cref="AddLight"/>. Besides the four levels,
+/// which gameplay reads, each tile has a smooth <see cref="Intensity"/> and a <see cref="LightColor"/> for 24-bit
+/// colour.
 /// </summary>
 public sealed class LightMap
 {
@@ -56,7 +59,13 @@ public sealed class LightMap
     private readonly int _maxRows;
     private readonly byte[] _levels;
     private readonly float[] _intensities;
-    private readonly bool[] _warm;
+    private readonly Vector3[] _colors;
+
+    /// <summary>The lamp's light per unit of intensity, red to blue: a warm oil flame.</summary>
+    public static readonly Vector3 LampColor = new(1f, .86f, .62f);
+
+    /// <summary>A <see cref="PointLight"/> at least this bright on a tile raises it to <see cref="Lit"/>.</summary>
+    private const float PointLitIntensity = .55f;
 
     //**********************************************************
     //** ctor
@@ -68,7 +77,7 @@ public sealed class LightMap
         _maxRows = maxRows;
         _levels = new byte[columns * maxRows];
         _intensities = new float[columns * maxRows];
-        _warm = new bool[columns * maxRows];
+        _colors = new Vector3[columns * maxRows];
     }
 
     //**********************************************************
@@ -101,7 +110,7 @@ public sealed class LightMap
         Rows = Math.Clamp(rows, 0, _maxRows);
         Array.Clear(_levels);
         Array.Clear(_intensities);
-        Array.Clear(_warm);
+        Array.Clear(_colors);
 
         var direction = lampDirection.LengthSquared() > 0f ? Vector2.Normalize(lampDirection) : Vector2.UnitX;
         var lampShare = (reach <= 0f ? EmptyLampShare : 1f) * (dimmed ? FlickerShare : 1f);
@@ -119,35 +128,42 @@ public sealed class LightMap
             _levels[index] = level;
             lampIntensity *= lampShare;
             _intensities[index] = Quantize(Math.Max(dayIntensity, lampIntensity));
-            _warm[index] = lampIntensity > dayIntensity;
+            _colors[index] = Quantize(lampIntensity > dayIntensity ? LampColor * lampIntensity : new Vector3(dayIntensity));
             if (level > Dark)
                 mine.At(column, row).Seen = true;
         }
     }
 
     /// <summary>
-    /// Raises the light around a lantern at <paramref name="center"/> (tile coordinates) to at least <see cref="Lit"/>
-    /// within <paramref name="radius"/> tiles, <see cref="Dim"/> within 1.5 times that, and marks those tiles seen.
-    /// Call after <see cref="Compute"/>; walls don't block it.
+    /// Adds a coloured <paramref name="light"/> (call after <see cref="Compute"/>): its colour is added to every tile it
+    /// reaches, the tile's <see cref="Intensity"/> rises to the light's if that is brighter, and the tile's level rises
+    /// to <see cref="Lit"/> where the light is at least 0.55, else to <see cref="Dim"/>. Those tiles are marked seen.
+    /// Walls don't block it.
     /// </summary>
-    public void AddLantern(Mine mine, Vector2 center, float radius)
+    public void AddLight(Mine mine, in PointLight light)
     {
-        var reach = radius * 1.5f;
-        var firstRow = Math.Max(FirstRow, (int)MathF.Floor(center.Y - reach));
-        var lastRow = Math.Min(FirstRow + Rows - 1, (int)MathF.Ceiling(center.Y + reach));
-        for (var row = firstRow; row <= lastRow; row++)
-        for (var column = 0; column < _columns; column++)
-        {
-            var distance = Vector2.Distance(new Vector2(column + .5f, row + .5f), center);
-            var index = (row - FirstRow) * _columns + column;
-            var intensity = Quantize(LanternIntensity(distance, radius, reach));
-            if (intensity > _intensities[index])
-            {
-                _intensities[index] = intensity;
-                _warm[index] = true;
-            }
+        if (light.Strength <= 0f || light.Radius <= 0f)
+            return;
 
-            var level = distance <= radius ? Lit : distance <= reach ? Dim : Dark;
+        var reach = light.Radius * 1.5f;
+        var color = new Vector3((light.Color >> 16) & 0xFF, (light.Color >> 8) & 0xFF, light.Color & 0xFF) / 255f;
+        var firstRow = Math.Max(FirstRow, (int)MathF.Floor(light.Center.Y - reach));
+        var lastRow = Math.Min(FirstRow + Rows - 1, (int)MathF.Ceiling(light.Center.Y + reach));
+        var firstColumn = Math.Max(0, (int)MathF.Floor(light.Center.X - reach));
+        var lastColumn = Math.Min(_columns - 1, (int)MathF.Ceiling(light.Center.X + reach));
+        for (var row = firstRow; row <= lastRow; row++)
+        for (var column = firstColumn; column <= lastColumn; column++)
+        {
+            var distance = Vector2.Distance(new Vector2(column + .5f, row + .5f), light.Center);
+            var intensity = light.Strength * PointFalloff(distance, light.Radius, reach);
+            if (intensity <= 0f)
+                continue;
+
+            var index = (row - FirstRow) * _columns + column;
+            _colors[index] = Quantize(Vector3.Min(Vector3.One, _colors[index] + color * intensity));
+            _intensities[index] = Math.Max(_intensities[index], Quantize(intensity));
+
+            var level = intensity >= PointLitIntensity ? Lit : Dim;
             ref var current = ref _levels[index];
             if (level <= current)
                 continue;
@@ -179,11 +195,18 @@ public sealed class LightMap
         return _intensities[r * _columns + column];
     }
 
-    /// <summary>Whether a tile's light comes from the lamp or a lantern (warm), not daylight.</summary>
-    public bool IsWarm(int column, int row)
+    /// <summary>
+    /// The colour of the light on a tile, red, green and blue from 0 to 1 (each in steps of
+    /// 1/<see cref="IntensitySteps"/>): white daylight, the warm <see cref="LampColor"/>, plus every
+    /// <see cref="PointLight"/>. Black outside the window.
+    /// </summary>
+    public Vector3 LightColor(int column, int row)
     {
         var r = row - FirstRow;
-        return (uint)column < (uint)_columns && (uint)r < (uint)Rows && _warm[r * _columns + column];
+        if ((uint)column >= (uint)_columns || (uint)r >= (uint)Rows)
+            return Vector3.Zero;
+
+        return _colors[r * _columns + column];
     }
 
     //**********************************************************
@@ -244,16 +267,18 @@ public sealed class LightMap
         return distance < reach * LitShare ? Lit : Dim;
     }
 
-    /// <summary>A lantern: .8 at its centre, .55 at <paramref name="radius"/>, .25 at <paramref name="reach"/>.</summary>
-    private static float LanternIntensity(float distance, float radius, float reach)
+    /// <summary>A point light's share at a distance: 1 at its centre, 0.69 at the radius, 0.31 at the reach.</summary>
+    private static float PointFalloff(float distance, float radius, float reach)
     {
         if (distance <= radius)
-            return .8f - .25f * distance / radius;
+            return 1f - .3125f * distance / radius;
 
-        return distance <= reach ? .55f - .3f * (distance - radius) / (reach - radius) : 0f;
+        return distance <= reach ? .6875f - .375f * (distance - radius) / (reach - radius) : 0f;
     }
 
     private static float Quantize(float intensity) => MathF.Round(intensity * IntensitySteps) / IntensitySteps;
+
+    private static Vector3 Quantize(Vector3 color) => new(Quantize(color.X), Quantize(color.Y), Quantize(color.Z));
 
     /// <summary>Whether a solid tile lies between the lamp and the target tile (not counting those two).</summary>
     private static bool IsBlocked(Mine mine, Vector2 origin, Vector2 toTile, float distance, int column, int row)

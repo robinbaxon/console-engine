@@ -1,5 +1,6 @@
 using System;
 using EternalDigger.Mining;
+using Microsoft.Xna.Framework;
 
 namespace EternalDigger.Rendering;
 
@@ -7,8 +8,8 @@ namespace EternalDigger.Rendering;
 public readonly record struct TileRgb(uint Foreground, uint Background, uint Speck = 0);
 
 /// <summary>
-/// The colours of the mine in 24-bit colour: a tile's colour under the <see cref="LightMap"/>'s smooth light
-/// (<see cref="LightMap.Intensity"/>), warm where the lamp or a lantern lights it and neutral in daylight.
+/// The colours of the mine in 24-bit colour: a tile's colour times the colour of the light on it
+/// (<see cref="LightMap.LightColor"/>: white daylight, the warm lamp, coloured point lights).
 /// </summary>
 public static class TileShade
 {
@@ -33,10 +34,6 @@ public static class TileShade
 
     /// <summary>Below this light a crack is drawn light on the dark rock instead of black on the fill.</summary>
     public const float LightCrackBelow = .45f;
-
-    /// <summary>What lamp light keeps of green and blue: a warm oil flame.</summary>
-    private const float WarmGreen = .86f;
-    private const float WarmBlue = .62f;
 
     private static readonly TileRgb Dirt = new(0x8A5A2E, 0x5C3A1E);
     private static readonly TileRgb Stone = new(0x9A9A96, 0x55565A);
@@ -65,15 +62,14 @@ public static class TileShade
     };
 
     /// <summary>
-    /// <paramref name="rgb"/> under a light of <paramref name="intensity"/> (0–1). <paramref name="warmth"/> is the
-    /// lamp's share of that light (0 daylight, 1 lamp only).
+    /// <paramref name="rgb"/> under a <paramref name="light"/> colour (red, green and blue from 0 to 1): each channel
+    /// times the light's.
     /// </summary>
-    public static uint Lit(uint rgb, float intensity, float warmth) => Rgb.Scale(rgb, intensity,
-        intensity * (1f - warmth * (1f - WarmGreen)), intensity * (1f - warmth * (1f - WarmBlue)));
+    public static uint Lit(uint rgb, Vector3 light) => Rgb.Scale(rgb, light.X, light.Y, light.Z);
 
-    /// <summary>An ore speck: brighter than its rock in faint light.</summary>
-    public static uint Speck(uint rgb, float intensity, float warmth) =>
-        Lit(rgb, SpeckFloor + (1f - SpeckFloor) * intensity, warmth);
+    /// <summary>An ore speck: brighter than its rock in faint light, never below <see cref="SpeckFloor"/>.</summary>
+    public static uint Speck(uint rgb, Vector3 light) =>
+        Lit(rgb, new Vector3(SpeckFloor) + light * (1f - SpeckFloor));
 
     /// <summary>A crack over <paramref name="background"/>: black on a well-lit fill, grey on dark rock.</summary>
     public static uint Crack(uint background, float intensity) =>

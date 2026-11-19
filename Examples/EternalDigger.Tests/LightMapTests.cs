@@ -168,34 +168,84 @@ public class LightMapTests
     }
 
     [Test]
-    public void IsWarm_LampLight_IsWarmAndDaylightIsNot()
+    public void LightColor_LampLight_IsWarmAndDaylightIsWhite()
     {
         var (mine, light) = Create();
         RockAround(mine);
         DigTunnel(mine, Column + 1, Column + 4);
 
         ComputeAt(mine, light, Vector2.UnitX);
-        Assert.That(light.IsWarm(Column + 2, Row), Is.True, "lamp");
+        var lamp = light.LightColor(Column + 2, Row);
+        Assert.That(lamp.X, Is.GreaterThan(lamp.Y), "lamp: more red than green");
+        Assert.That(lamp.Y, Is.GreaterThan(lamp.Z), "lamp: more green than blue");
 
         light.Compute(mine, 0, MaxRows, new Vector2(Column + .5f, Row + .5f), Vector2.UnitX);
-        Assert.That(light.IsWarm(20, 3), Is.False, "the sky");
+        Assert.That(light.LightColor(20, 3), Is.EqualTo(Vector3.One), "the sky");
         Assert.That(light.Intensity(20, 3), Is.EqualTo(1f));
     }
 
     [Test]
-    public void AddLantern_AroundTheCentre_IsWarmAndFadesOutward()
+    public void AddLight_AroundTheCentre_FadesOutwardAndRaisesTheLevel()
     {
         var (mine, light) = Create();
         RockAround(mine);
         ComputeAt(mine, light, -Vector2.UnitX);
         var center = new Vector2(Column + 8.5f, Row + .5f);
 
-        light.AddLantern(mine, center, 2f);
+        light.AddLight(mine, new PointLight(center, 2f, 0xFFFFFF, .8f));
 
-        Assert.That(light.IsWarm(Column + 8, Row), Is.True);
+        Assert.That(light.Intensity(Column + 8, Row), Is.EqualTo(.8f).Within(.5f / LightMap.IntensitySteps));
         Assert.That(light.Intensity(Column + 8, Row), Is.GreaterThan(light.Intensity(Column + 10, Row)));
         Assert.That(light.Intensity(Column + 10, Row), Is.GreaterThan(0f), "inside 1.5 times the radius");
         Assert.That(light.Intensity(Column + 13, Row), Is.Zero, "beyond it");
+        Assert.That(light.Get(Column + 8, Row), Is.EqualTo(LightMap.Lit), "within the radius");
+        Assert.That(light.Get(Column + 11, Row), Is.EqualTo(LightMap.Dim), "between the radius and the reach");
+        Assert.That(mine.At(Column + 10, Row).Seen, Is.True);
+        Assert.That(mine.At(Column + 13, Row).Seen, Is.False);
+    }
+
+    [Test]
+    public void AddLight_ColoredLight_TintsTheTileItsColour()
+    {
+        var (mine, light) = Create();
+        RockAround(mine);
+        ComputeAt(mine, light, -Vector2.UnitX);
+
+        light.AddLight(mine, new PointLight(new Vector2(Column + 8.5f, Row + .5f), 2f, 0xFF0000, 1f));
+
+        Assert.That(light.LightColor(Column + 8, Row), Is.EqualTo(new Vector3(1f, 0f, 0f)));
+    }
+
+    [Test]
+    public void AddLight_OnLampLight_AddsItsColourAndKeepsTheBrighterIntensity()
+    {
+        var (mine, light) = Create();
+        RockAround(mine);
+        DigTunnel(mine, Column + 1, Column + 4);
+        ComputeAt(mine, light, Vector2.UnitX);
+        var lampColor = light.LightColor(Column + 2, Row);
+        var lampIntensity = light.Intensity(Column + 2, Row);
+
+        light.AddLight(mine, new PointLight(new Vector2(Column + 2.5f, Row + .5f), 1f, 0x0000FF, .2f));
+
+        Assert.That(light.LightColor(Column + 2, Row).Z, Is.GreaterThan(lampColor.Z), "more blue");
+        Assert.That(light.LightColor(Column + 2, Row).X, Is.EqualTo(lampColor.X), "red unchanged");
+        Assert.That(light.Intensity(Column + 2, Row), Is.EqualTo(lampIntensity), "the lamp is brighter");
+        Assert.That(light.Get(Column + 2, Row), Is.EqualTo(LightMap.Bright), "a level is never lowered");
+    }
+
+    [Test]
+    public void AddLight_NoStrength_ChangesNothing()
+    {
+        var (mine, light) = Create();
+        RockAround(mine);
+        ComputeAt(mine, light, -Vector2.UnitX);
+
+        light.AddLight(mine, new PointLight(new Vector2(Column + 8.5f, Row + .5f), 2f, 0xFFFFFF, 0f));
+
+        Assert.That(light.Get(Column + 8, Row), Is.EqualTo(LightMap.Dark));
+        Assert.That(light.LightColor(Column + 8, Row), Is.EqualTo(Vector3.Zero));
+        Assert.That(mine.At(Column + 8, Row).Seen, Is.False);
     }
 
     //**********************************************************

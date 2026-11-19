@@ -61,7 +61,7 @@ The only other persistent inputs are the TerraForM map files ([§ Map file forma
 | `Miner` component | `Oil`, `OilFlasks` | Lamp oil 0–100, burns underground; flasks carried (0–5), poured when low | Refilled at the counter or from a flask (saved) |
 | `Headlamp` (one per `MineScene`) | `Reach`, `IsDimmed`, `IsLow`, `IsEmpty` | This frame's lamp, from the oil and lamp tier | Every frame (`LampSystem`) |
 | `Miner` component | `IsRiding`, `ClimbStreak` | In the lift car; tiles climbed up without letting go | Rescue, getting out / any non-climb action |
-| `LightMap` | `_levels` (byte per tile on screen), `_intensities` (float, 24-bit shading), `_warm` (bool), `FirstRow`, `Rows` | This frame's light | Recomputed every frame |
+| `LightMap` | `_levels` (byte per tile on screen), `_intensities` (float, 24-bit shading), `_colors` (`Vector3` light colour per tile), `FirstRow`, `Rows` | This frame's light | Recomputed every frame |
 | `Canvas` | `_backgrounds` (`ConsoleColor` per cell), `_backgroundRgb` (`0xRRGGBB` with bit 24 set for a 24-bit cell, 0 for a palette cell) | The background last drawn per cell, for `DrawOver` | Rewritten every frame by sky and terrain |
 | Particles | `Particle` (`Age`, `Lifetime`, `Style`, `Variant`), `Physics`, `TileCollider`/`Mist` tags, `FloatingText` + engine `Position`/`Velocity`/`Glyph` | Effects only, no game state | Destroyed when `Age >= Lifetime` |
 

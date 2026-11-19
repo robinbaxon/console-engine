@@ -129,11 +129,13 @@ Scenes.Update → MineScene.OnUpdate → Simulation.Update(dt)
   GasSystem               gas shimmer near the miner; a lit lamp within 2 tiles makes a pocket flare (lamp out)
   CameraSystem            follow the miner, add shake, round to whole cells → Camera.Position
   LampSystem              burn oil underground; Headlamp reach, flicker, low; lamp smoke
-  LightingSystem          LightMap.Compute for the rows on screen with the Headlamp (marks tiles Seen)
+  LightingSystem          LightMap.Compute for the rows on screen with the Headlamp (marks tiles Seen), then the
+                          point lights: camp lantern, burning fuses, Glow entities
   GlintSystem             sample ore near the miner → glints
   MistSystem              keep up to 40 mist particles in lit caves
   ParticlePhysicsSystem   gravity, drag, move, land on rock
   ParticleLifetimeSystem  age, pick the glyph for the age, destroy expired
+  GlowSystem              age blast and gas-flare glows, destroy expired
   FloatingTextSystem      drift up, destroy expired
   SaveSystem              a sale/purchase asked for a save, or 60 s underground → GameSaver.Save
   ── Commands.Playback: the particles recorded above are created, expired ones destroyed

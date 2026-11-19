@@ -54,7 +54,8 @@ Examples/EternalDigger/
 ├── Rendering/
 │   ├── Canvas.cs               draws through RenderConsole (palette or 24-bit) and remembers backgrounds
 │   ├── LightMap.cs             per-tile light on screen: daylight + headlamp cone (reach, flicker dimming);
-│   │                           four levels and a smooth Intensity/IsWarm for 24-bit colour
+│   │                           four levels and a smooth Intensity/LightColor for 24-bit colour; AddLight
+│   ├── PointLight.cs           a coloured light: centre, radius, colour, strength
 │   ├── Headlamp.cs             this frame's lamp: Reach, IsDimmed, IsLow, IsEmpty
 │   ├── Rgb.cs                  0xRRGGBB helpers: Of(ConsoleColor), Scale
 │   ├── TileShade.cs            24-bit tile colours (TileRgb per TileType) and how light shades them
@@ -77,13 +78,14 @@ Examples/EternalDigger/
 | 6 | `GasSystem` | `Mine`, `GasPockets`, `EffectSpawner`, `Random` | `Miner`; `Gas` | Gas shimmer near the miner; a lit lamp within 2 tiles flares the pocket (`GAS!`, lamp out 3 s, −5 oil). Public `Check(...)` |
 | 7 | `CameraSystem` | `Camera`, `RenderConsole`, `ScreenShake`, `Random` | `Miner, Position` | Vertical follow, shake, whole-cell `Camera.Position` |
 | 8 | `LampSystem` | `Headlamp`, `EffectSpawner`, `Random`, `Mine` | `Miner, Position` | Burns oil underground (×2 in black damp, none while blown out); shortens the cone below the wall and halves it in black damp (`BLACK DAMP` on entry); pours a carried flask into a low lamp (`OIL +40`); sets the `Headlamp`; lamp smoke when low. Public static `Burn(...)` |
-| 9 | `LightingSystem` | `Mine`, `LightMap`, `Camera`, `Headlamp` | `Miner, Position` | `LightMap.Compute` for the rows on screen |
+| 9 | `LightingSystem` | `Mine`, `LightMap`, `Camera`, `Headlamp` | `Miner, Position`; `Dynamite`; `Glow, Position` | `LightMap.Compute` for the rows on screen, then the point lights: camp lantern, fuses, glows |
 | 10 | `GlintSystem` | `Mine`, `LightMap`, `Camera`, `EffectSpawner`, `Random` | `Miner` | Ore glints near the miner, at a fixed rate |
 | 11 | `MistSystem` | `Mine`, `LightMap`, `Camera`, `EffectSpawner`, `Random` | `Mist` | Keeps up to 40 mist particles in lit caves |
 | 12 | `ParticlePhysicsSystem` | `Mine` | `Particle, Position, Velocity, Physics` | Gravity, drag, movement, landing on rock (`TileCollider`) |
 | 13 | `ParticleLifetimeSystem` | — | `Particle, Glyph` | Ages particles, sets their glyph, destroys expired ones |
-| 14 | `FloatingTextSystem` | — | `FloatingText, Position, Velocity` | Moves floating texts up, destroys expired ones |
-| 15 | `SaveSystem` | `GameSaver` | `Miner` | Saves on request, or after `GameSaver.AutosaveInterval` s underground |
+| 14 | `GlowSystem` | — | `Glow` | Ages glows, destroys expired ones |
+| 15 | `FloatingTextSystem` | — | `FloatingText, Position, Velocity` | Moves floating texts up, destroys expired ones |
+| 16 | `SaveSystem` | `GameSaver` | `Miner` | Saves on request, or after `GameSaver.AutosaveInterval` s underground |
 
 ### Presentation (`MineScene.Presentation`)
 
@@ -122,7 +124,7 @@ Examples/EternalDigger/
 | `Mine` | `MineScene` | control, motion, light, glints, mist, particle physics, terrain, saving | `At`, `TypeAt`, `IsSolid`, `HasLadder`, `IsSupported`, `Hit`, `TryPlaceLadder`, `CollectChanges`, `Apply`, `WallBottomDepth`, `Noise`, `GeneratedRows`; static `Depth`, `IsInside` |
 | `EffectSpawner` | `MineScene` | control, interaction, motion, glints, mist | `DigHit`, `Clank`, `TileBreak`, `RareFind`, `Pulse`, `PlantDynamite`, `FuseSpark`, `Blast`, `ClimbTrail`, `FootDust`, `LandingDust`, `Glint`, `Mist`, `Coins`, `Pop`, `Number`, `Shake` |
 | `ScreenShake` | `MineScene` (inside `EffectSpawner`) | `EffectSpawner`, `CameraSystem` | `Add`, `Update`, `Strength` |
-| `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `AddLantern`, `Get`, `Intensity`, `IsWarm`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright`, `IntensitySteps` |
+| `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `AddLight`, `Get`, `Intensity`, `LightColor`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright`, `IntensitySteps` |
 | `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawRgb`, `DrawOver`, `BackgroundAt`, `IsTrueColor`, `Width`, `Height` |
 | `Random(seed)` | `MineScene` | `EffectSpawner`, camera, glints, mist | — |
 | `Elevator` | `MineScene` | control, interaction, `ElevatorSystem`, lift and prompt rendering, HUD, saving | `TryBuild`, `CanBuildNext`, `Send`, `PickedUp`, `Update`, `Restore`, `IsLanding`, `IsCarAt`, `Segments`, `Depth`, `BottomRow`, `NextSegmentPrice`, `CarRow`, `CarTargetRow`, `IsCarMoving`, `IsCalled`; consts `Column`, `TopRow` |
@@ -193,6 +195,8 @@ Static rule classes: `Tiles`, `Shop`, `Upgrades`, `Layout`, `TileLooks`, `Partic
 | `LightMap.LampRange` / `BrightRange` / `LitRange` | 8 / 4 / 6 tiles | Starting lamp reach and fall-off (bright and lit scale with the reach: ½ and ¾) |
 | `LightMap.ConeHalfAngle` | 40° | Half the lamp cone |
 | `LightMap.IntensitySteps` | 32 | Smooth light is rounded to 1/32 (24-bit colour) |
+| `LightingSystem.LanternColor` / `LanternStrength` / `FuseColor` / `FuseRadius` | `0xFFB060` / 0.8 / `0xFF7A30` / 1.2 tiles | Point lights: camp lantern and burning fuse |
+| `EffectSpawner.BlastGlowColor` / `GasGlowColor` | `0xFFE8B0` / `0xC8F050` | Glows of blasts and gas flares |
 | `TileShade.SpeckFloor` / `LightCrackBelow` | 0.35 / 0.45 | 24-bit: least share of an ore speck's colour; below this light a crack is drawn light |
 | `MistSystem.MaxMist` | 40 | Mist particles at most |
 | `ParticleRenderSystem.NearMinerCap` | 6 | Particles drawn per frame in the one-tile ring around the miner |

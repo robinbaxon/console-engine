@@ -3,6 +3,7 @@ using EternalDigger.Mining;
 using EternalDigger.Rendering;
 using EternalDigger.Tests.Fakes;
 using ConsoleEngine.Infrastructure.Rendering;
+using Microsoft.Xna.Framework;
 using NUnit.Framework;
 
 namespace EternalDigger.Tests;
@@ -27,12 +28,16 @@ public class TileShadeTests
 
     [Test]
     public void Lit_Daylight_KeepsTheHue() =>
-        Assert.That(TileShade.Lit(0x808080, .5f, warmth: 0f), Is.EqualTo(0x404040u));
+        Assert.That(TileShade.Lit(0x808080, new Vector3(.5f)), Is.EqualTo(0x404040u));
+
+    [Test]
+    public void Lit_ColoredLight_ScalesEachChannel() =>
+        Assert.That(TileShade.Lit(0x808080, new Vector3(1f, .5f, 0f)), Is.EqualTo(0x804000u));
 
     [Test]
     public void Lit_LampLight_IsWarm()
     {
-        var color = TileShade.Lit(0x808080, 1f, warmth: 1f);
+        var color = TileShade.Lit(0x808080, LightMap.LampColor);
 
         var red = (color >> 16) & 0xFF;
         var green = (color >> 8) & 0xFF;
@@ -46,9 +51,9 @@ public class TileShadeTests
     {
         var colors = TileShade.For(TileType.Gold);
 
-        var speck = TileShade.Speck(colors.Speck, .25f, 0f);
+        var speck = TileShade.Speck(colors.Speck, new Vector3(.25f));
 
-        Assert.That(speck & 0xFF0000, Is.GreaterThan(TileShade.Lit(colors.Foreground, .25f, 0f) & 0xFF0000));
+        Assert.That(speck & 0xFF0000, Is.GreaterThan(TileShade.Lit(colors.Foreground, new Vector3(.25f)) & 0xFF0000));
     }
 
     [Test]
