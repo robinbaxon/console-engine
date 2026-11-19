@@ -248,7 +248,7 @@ Examples/
                                   LampOil, MinerInput.
                                   README.md + docs/ (gameplay, architecture, rendering-and-effects,
                                   working-with-the-code, testing, reference)
-  EternalDigger.Tests/            Mine, Tiles, Shop, LightMap, TileShade, Glow, ParticleLooks,
+  EternalDigger.Tests/            Mine, Tiles, Shop, LightMap, TileShade, Blend (24-bit overlays), Glow, ParticleLooks,
                                   frame-by-frame MinerControlSystem, MinerVisibility (render), Elevator, Dynamite, ShopCounter, Upgrades, LampOil,
                                   BagWeight, SaveFile, SaveSystem, TitleMenu, InventorySystem, DeepCamp, Gas, Darkness and Progress tests, Fakes/ (console handler)
   SkyStack/                       original ECS tower climber (no OOP original): Climbing/ (Tower, Floor, ClimbPhysics,

@@ -13,7 +13,8 @@ namespace EternalDigger.Systems;
 /// carries (gold, ladders, oil and flasks, dynamite, the bag with its weight and worth), the upgrade tiers, the lift and
 /// the rare finds ever dug up. While it is open the game is paused: every <paramref name="simulation"/> system is
 /// disabled, so nothing moves and no oil burns; drawing goes on. Runs last in Presentation, over the HUD. The lines are
-/// rebuilt only when a shown value changes.
+/// rebuilt only when a shown value changes. In 24-bit colour the panel's fill is see-through
+/// (<see cref="PanelFill.Prompt"/>), so the paused mine shows faintly behind it.
 /// </summary>
 public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGroup simulation) : EntitySystem
 {
@@ -29,7 +30,6 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
     public const int PanelWidth = 58;
 
     private const ConsoleColor Frame = ConsoleColor.Yellow;
-    private const ConsoleColor Fill = ConsoleColor.DarkBlue;
     private const char OreIcon = '◆';
 
     private static readonly ConsoleColor[] OreColors =
@@ -92,16 +92,20 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
         var left = (canvas.Width - width) / 2;
         var top = Math.Max(Layout.HudHeight + 1, (canvas.Height - height) / 2);
 
+        // Every panel cell is drawn once: a see-through fill drawn twice would be darker there.
+        var paused = width - PausedText.Length - 2;
         for (var x = 0; x < width; x++)
         {
             var corner = x == 0 || x == width - 1;
-            canvas.Draw(left + x, top, corner ? x == 0 ? '╔' : '╗' : '═', Frame, Fill);
-            canvas.Draw(left + x, top + height - 1, corner ? x == 0 ? '╚' : '╝' : '═', Frame, Fill);
+            canvas.DrawPanel(left + x, top, corner ? x == 0 ? '╔' : '╗' : '═', Frame, PanelFill.Prompt);
+            if (x >= paused && x < paused + PausedText.Length)
+                canvas.DrawPanel(left + x, top + height - 1, PausedText[x - paused], ConsoleColor.Gray, PanelFill.Prompt);
+            else
+                canvas.DrawPanel(left + x, top + height - 1, corner ? x == 0 ? '╚' : '╝' : '═', Frame, PanelFill.Prompt);
         }
 
         canvas.Draw(left + 2, top, Title, ConsoleColor.Black, Frame);
         canvas.Draw(left + width - CloseHint.Length - 2, top, CloseHint, ConsoleColor.Black, Frame);
-        canvas.Draw(left + width - PausedText.Length - 2, top + height - 1, PausedText, ConsoleColor.Gray, Fill);
         for (var i = 0; i < _lines.Length; i++)
             DrawLine(left, top + 1 + i, _lines[i], i);
     }
@@ -112,8 +116,8 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
 
     private void DrawLine(int left, int y, string text, int index)
     {
-        canvas.Draw(left, y, '║', Frame, Fill);
-        canvas.Draw(left + PanelWidth + 1, y, '║', Frame, Fill);
+        canvas.DrawPanel(left, y, '║', Frame, PanelFill.Prompt);
+        canvas.DrawPanel(left + PanelWidth + 1, y, '║', Frame, PanelFill.Prompt);
         var heading = text.Length > 0 && text[0] != ' ';
         var ore = 0;
         for (var i = 0; i < PanelWidth; i++)
@@ -127,7 +131,7 @@ public sealed class InventorySystem(Canvas canvas, Elevator elevator, SystemGrou
                 '○' => ConsoleColor.DarkGray,
                 _ => heading ? ConsoleColor.Yellow : index == 0 ? ConsoleColor.Gray : ConsoleColor.White
             };
-            canvas.Draw(left + 1 + i, y, character, color, Fill);
+            canvas.DrawPanel(left + 1 + i, y, character, color, PanelFill.Prompt);
         }
     }
 

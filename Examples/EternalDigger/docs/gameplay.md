@@ -354,7 +354,7 @@ Moody but forgiving: nothing here hurts the miner. The worst outcome is lost lig
 |---|---|---|
 | Act 2 rock | Below the wall (deeper than the column's last obsidian row) the cone reaches 2 tiles less (never under 1 while lit) | `LampOil.ActTwoAbsorb`, `LampOil.DarkReach`, `Mine.IsBelowTheWall` |
 | Black damp | Bad air in rare 4 × 4 areas below the wall (12% of them): their open tiles, caves and your own tunnels alike. Standing in it halves the cone (after the act 2 cut) and burns twice the oil. A grey `BLACK DAMP` floats up as you step in | `Tiles.BlackDampChance`, `Mine.IsBlackDamp`, `LampOil.BlackDampReachShare`, `BlackDampBurn`, `LampSystem.InBlackDamp` |
-| Its look | No mist in black damp. Lit rock around it is drawn as dark-grey `░` (ore specks still show) | `MistSystem`, `Mine.IsBlackDampEdge`, `TileLooks.BlackDampEdge`, `TerrainRenderSystem` |
+| Its look | No mist in black damp. Lit rock around it is drawn as dark-grey `░` (ore specks still show); in 24-bit colour it keeps its texture, darker and greyer, and so does the back wall inside it (`TileShade.Choked`) | `MistSystem`, `Mine.IsBlackDampEdge`, `TileLooks.BlackDampEdge`, `TileShade.Choked`, `TerrainRenderSystem` |
 | Never lost | Glints and remembered outlines show as everywhere, so the way back is always visible | `GlintSystem`, `TerrainRenderSystem` |
 
 ## The rescue

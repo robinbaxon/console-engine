@@ -52,12 +52,13 @@ Examples/EternalDigger/
 │   ├── ParticleLooks.cs        characters and colours per style over a lifetime; GlyphAt
 │   └── ScreenShake.cs          shake strength: Add, Update
 ├── Rendering/
-│   ├── Canvas.cs               draws through RenderConsole (palette or 24-bit) and remembers backgrounds
+│   ├── Canvas.cs               draws through RenderConsole (palette or 24-bit), remembers each cell's colours;
+│   │                           Tint, DrawGlass, DrawPanel blend in 24-bit; PanelFill
 │   ├── LightMap.cs             per-tile light on screen: daylight + headlamp cone (reach, flicker dimming);
 │   │                           four levels and a smooth Intensity/LightColor for 24-bit colour; AddLight
 │   ├── PointLight.cs           a coloured light: centre, radius, colour, strength
 │   ├── Headlamp.cs             this frame's lamp: Reach, IsDimmed, IsLow, IsEmpty
-│   ├── Rgb.cs                  0xRRGGBB helpers: Of(ConsoleColor), Scale
+│   ├── Rgb.cs                  0xRRGGBB helpers: Of(ConsoleColor), Scale, Mix, Luma, Grey
 │   ├── TileShade.cs            24-bit tile colours (TileRgb per TileType) and how light shades them
 │   └── TileLooks.cs            TileLook per TileType; ladder and crack characters
 ├── README.md                   start here
@@ -97,7 +98,7 @@ Examples/EternalDigger/
 | 4 | `ElevatorRenderSystem` | `Canvas`, `Camera`, `Elevator` | — | Shaft walls and braces, cable, car, speed lines |
 | 5 | `CampRenderSystem` | `Canvas`, `Camera` | `Miner` | The deep camp once bought: tent, lantern, `CAMP` plank, crate |
 | 6 | `DynamiteRenderSystem` | `Canvas`, `Camera` | `Dynamite` | Planted sticks `¡` and their flickering `*` fuse |
-| 7 | `ParticleRenderSystem` | `Canvas`, `Camera`, `LightMap` | `Particle, Position, Glyph`; `Miner, Position` | Particles (dust and mist only where lit; none on the miner, capped and dimmed around him) |
+| 7 | `ParticleRenderSystem` | `Canvas`, `Camera`, `LightMap` | `Particle, Position, Glyph`; `Miner, Position` | Particles (dust and mist only where lit; none on the miner, capped and dimmed around him; 24-bit: mist and gas as tints) |
 | 8 | `MinerRenderSystem` | `Canvas`, `Camera`, `Headlamp` | `Miner, Position` | The miner and lamp glow, over the particles |
 | 9 | `FloatingTextRenderSystem` | `Canvas`, `Camera` | `FloatingText, Position` | `+150g` / `-10g` / `ELEVATOR +10m` / `TOO HARD` |
 | 10 | `PromptRenderSystem` | `Canvas`, `Camera`, `Mine`, `Elevator`, `ShopCounter` (surface), `ShopCounter` (camp) | `Miner, Position` | Door, shop, camp counter, lift sign and landing prompts, dynamite hints |
@@ -125,7 +126,7 @@ Examples/EternalDigger/
 | `EffectSpawner` | `MineScene` | control, interaction, motion, glints, mist | `DigHit`, `Clank`, `TileBreak`, `RareFind`, `Pulse`, `PlantDynamite`, `FuseSpark`, `Blast`, `ClimbTrail`, `FootDust`, `LandingDust`, `Glint`, `Mist`, `Coins`, `Pop`, `Number`, `Shake` |
 | `ScreenShake` | `MineScene` (inside `EffectSpawner`) | `EffectSpawner`, `CameraSystem` | `Add`, `Update`, `Strength` |
 | `LightMap` | `MineScene` | lighting, glints, mist, terrain, particles | `Compute` (with reach and flicker), `AddLight`, `Get`, `Intensity`, `LightColor`, `FirstRow`, `Rows`; `Dark`, `Dim`, `Lit`, `Bright`, `IntensitySteps` |
-| `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawRgb`, `DrawOver`, `BackgroundAt`, `IsTrueColor`, `Width`, `Height` |
+| `Canvas` | `MineScene` | all Presentation systems | `Draw`, `DrawRgb`, `DrawOver`, `Tint`, `DrawGlass`, `DrawPanel`, `BackgroundAt`, `BackgroundRgbAt`, `ForegroundRgbAt`, `IsTrueColor`, `Width`, `Height` |
 | `Random(seed)` | `MineScene` | `EffectSpawner`, camera, glints, mist | — |
 | `Elevator` | `MineScene` | control, interaction, `ElevatorSystem`, lift and prompt rendering, HUD, saving | `TryBuild`, `CanBuildNext`, `Send`, `PickedUp`, `Update`, `Restore`, `IsLanding`, `IsCarAt`, `Segments`, `Depth`, `BottomRow`, `NextSegmentPrice`, `CarRow`, `CarTargetRow`, `IsCarMoving`, `IsCalled`; consts `Column`, `TopRow` |
 | `ShopCounter` | `MineScene` | interaction, prompts | `Selected`, `Previous`, `Next`, `Select`; static `Items`, `Name` |
@@ -198,6 +199,11 @@ Static rule classes: `Tiles`, `Shop`, `Upgrades`, `Layout`, `TileLooks`, `Partic
 | `LightingSystem.LanternColor` / `LanternStrength` / `FuseColor` / `FuseRadius` | `0xFFB060` / 0.8 / `0xFF7A30` / 1.2 tiles | Point lights: camp lantern and burning fuse |
 | `EffectSpawner.BlastGlowColor` / `GasGlowColor` | `0xFFE8B0` / `0xC8F050` | Glows of blasts and gas flares |
 | `TileShade.SpeckFloor` / `LightCrackBelow` | 0.35 / 0.45 | 24-bit: least share of an ore speck's colour; below this light a crack is drawn light |
+| `TileShade.MemoryGrey` / `MemoryBrightness` | 0.6 / 0.5 | 24-bit: remembered rock is its texture colour this grey, at this brightness |
+| `TileShade.ChokedGrey` / `ChokedBrightness` | 0.75 / 0.45 | 24-bit: rock beside black damp and the back wall in it |
+| `ParticleLooks.MistTint` / `MistPeakAlpha` | `0xB4C0C8` / 0.3 | 24-bit: mist tint colour and opacity at mid-life |
+| `ParticleLooks.GasTint` / `GasPeakAlpha` | `0x5CD040` / 0.4 | 24-bit: gas shimmer tint |
+| `PanelFill.Prompt` | dark blue; `0x0A1636` at 0.8 | Fill of the prompt boxes and the inventory: 16 colours; 24-bit see-through |
 | `MistSystem.MaxMist` | 40 | Mist particles at most |
 | `ParticleRenderSystem.NearMinerCap` | 6 | Particles drawn per frame in the one-tile ring around the miner |
 | `ScreenShake.MaxStrength` / `Decay` | 2 cells / 6 per s | Shake cap and fade |

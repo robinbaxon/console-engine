@@ -2,7 +2,10 @@ using System;
 
 namespace EternalDigger.Rendering;
 
-/// <summary>24-bit colours as <c>0xRRGGBB</c>: the 16 console colours, and scaling a colour by a light.</summary>
+/// <summary>
+/// 24-bit colours as <c>0xRRGGBB</c>: the 16 console colours, scaling a colour by a light, mixing two colours and
+/// greying a colour out.
+/// </summary>
 public static class Rgb
 {
     //**********************************************************
@@ -30,9 +33,37 @@ public static class Rgb
 
     public static uint Scale(uint rgb, float factor) => Scale(rgb, factor, factor, factor);
 
+    /// <summary>
+    /// <paramref name="from"/> blended towards <paramref name="to"/> by <paramref name="alpha"/> (0: from, 1: to),
+    /// channel by channel: <paramref name="to"/> laid over <paramref name="from"/> with that opacity.
+    /// </summary>
+    public static uint Mix(uint from, uint to, float alpha)
+    {
+        alpha = Math.Clamp(alpha, 0f, 1f);
+        return (Blend((from >> 16) & 0xFF, (to >> 16) & 0xFF, alpha) << 16) |
+               (Blend((from >> 8) & 0xFF, (to >> 8) & 0xFF, alpha) << 8) |
+               Blend(from & 0xFF, to & 0xFF, alpha);
+    }
+
+    /// <summary>The brightness of a colour, 0–255, weighted as the eye sees it (Rec. 601).</summary>
+    public static float Luma(uint rgb) =>
+        .299f * ((rgb >> 16) & 0xFF) + .587f * ((rgb >> 8) & 0xFF) + .114f * (rgb & 0xFF);
+
+    /// <summary>
+    /// A colour greyed out by <paramref name="amount"/> (0: unchanged, 1: the grey of the same <see cref="Luma"/>).
+    /// </summary>
+    public static uint Grey(uint rgb, float amount)
+    {
+        var grey = (uint)Math.Clamp(Luma(rgb) + .5f, 0f, 255f);
+        return Mix(rgb, (grey << 16) | (grey << 8) | grey, amount);
+    }
+
     //**********************************************************
     //** internals
     //**********************************************************
 
     private static uint Channel(uint value, float factor) => (uint)Math.Clamp(value * factor + .5f, 0f, 255f);
+
+    private static uint Blend(uint from, uint to, float alpha) =>
+        (uint)Math.Clamp(from + ((float)to - from) * alpha + .5f, 0f, 255f);
 }

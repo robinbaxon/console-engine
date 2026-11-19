@@ -13,7 +13,7 @@ namespace EternalDigger.Systems;
 /// sign (<c>BUILD LIFT +10m [E] 200g</c>) or a lift landing (call, get in, ride). At the shop counter it is a
 /// three-line panel: the selected item with the Up/Down hint, what the miner has of it, and its price; the deep camp's
 /// counter and the tool shop show the same panel with their own items and prices. It bobs gently. A price turns red
-/// when the miner can't pay.
+/// when the miner can't pay. In 24-bit colour the boxes have a see-through fill (<see cref="PanelFill.Prompt"/>).
 /// </summary>
 public sealed class PromptRenderSystem(
     Canvas canvas, Camera camera, Mine mine, Elevator elevator, ShopCounter counter, ShopCounter campCounter,
@@ -218,12 +218,11 @@ public sealed class PromptRenderSystem(
         var top = bottom - lines - 1;
 
         const ConsoleColor frame = ConsoleColor.Yellow;
-        const ConsoleColor fill = ConsoleColor.DarkBlue;
         for (var i = 0; i < width; i++)
         {
             var corner = i == 0 || i == width - 1;
-            canvas.Draw(x + i, top, corner ? i == 0 ? '┌' : '┐' : '─', frame, fill);
-            canvas.Draw(x + i, bottom, corner ? i == 0 ? '└' : '┘' : '─', frame, fill);
+            canvas.DrawPanel(x + i, top, corner ? i == 0 ? '┌' : '┐' : '─', frame, PanelFill.Prompt);
+            canvas.DrawPanel(x + i, bottom, corner ? i == 0 ? '└' : '┘' : '─', frame, PanelFill.Prompt);
         }
 
         DrawLine(x, top + 1, inner, first, firstColor);
@@ -239,9 +238,8 @@ public sealed class PromptRenderSystem(
     private void DrawLine(int x, int y, int inner, string text, ConsoleColor color)
     {
         const ConsoleColor frame = ConsoleColor.Yellow;
-        const ConsoleColor fill = ConsoleColor.DarkBlue;
-        canvas.Draw(x, y, '│', frame, fill);
-        canvas.Draw(x + inner + 1, y, '│', frame, fill);
+        canvas.DrawPanel(x, y, '│', frame, PanelFill.Prompt);
+        canvas.DrawPanel(x + inner + 1, y, '│', frame, PanelFill.Prompt);
         var start = (inner - text.Length) / 2;
         var keyStart = text.IndexOf(KeyHint, StringComparison.Ordinal);
         for (var i = 0; i < inner; i++)
@@ -249,7 +247,7 @@ public sealed class PromptRenderSystem(
             var index = i - start;
             var character = index >= 0 && index < text.Length ? text[index] : ' ';
             var isKey = keyStart >= 0 && index >= keyStart && index < keyStart + KeyHint.Length;
-            canvas.Draw(x + 1 + i, y, character, isKey ? frame : color, fill);
+            canvas.DrawPanel(x + 1 + i, y, character, isKey ? frame : color, PanelFill.Prompt);
         }
     }
 }

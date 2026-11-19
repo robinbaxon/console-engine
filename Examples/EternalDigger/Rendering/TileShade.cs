@@ -23,8 +23,17 @@ public static class TileShade
     /// <summary>The faint dots on the back wall, at full light.</summary>
     public const uint BackWallDot = 0x8A8076;
 
-    /// <summary>Rock that was seen before and is dark now: a cool grey stipple.</summary>
-    public const uint Remembered = 0x4A4E57;
+    /// <summary>How much of its colour remembered rock loses (<see cref="Memory"/>): 0 keeps it, 1 is grey.</summary>
+    public const float MemoryGrey = .6f;
+
+    /// <summary>How bright remembered rock is, as a share of its texture colour at full light.</summary>
+    public const float MemoryBrightness = .5f;
+
+    /// <summary>How much of its colour a tile in or beside black damp loses (<see cref="Choked"/>).</summary>
+    public const float ChokedGrey = .75f;
+
+    /// <summary>How bright a tile in or beside black damp is, as a share of its lit colour.</summary>
+    public const float ChokedBrightness = .45f;
 
     /// <summary>A ladder that was seen before and is dark now.</summary>
     public const uint RememberedLadder = 0x4A4436;
@@ -70,6 +79,15 @@ public static class TileShade
     /// <summary>An ore speck: brighter than its rock in faint light, never below <see cref="SpeckFloor"/>.</summary>
     public static uint Speck(uint rgb, Vector3 light) =>
         Lit(rgb, new Vector3(SpeckFloor) + light * (1f - SpeckFloor));
+
+    /// <summary>
+    /// Rock that was seen before and is dark now: a faint, greyed memory of its texture colour
+    /// (<see cref="TileRgb.Foreground"/>), so dirt is remembered brown and slate blue. Never an ore's speck colour.
+    /// </summary>
+    public static uint Memory(uint rgb) => Rgb.Scale(Rgb.Grey(rgb, MemoryGrey), MemoryBrightness);
+
+    /// <summary>A lit colour in or beside black damp: darker and greyer, as if the bad air soaks up the light.</summary>
+    public static uint Choked(uint rgb) => Rgb.Scale(Rgb.Grey(rgb, ChokedGrey), ChokedBrightness);
 
     /// <summary>A crack over <paramref name="background"/>: black on a well-lit fill, grey on dark rock.</summary>
     public static uint Crack(uint background, float intensity) =>

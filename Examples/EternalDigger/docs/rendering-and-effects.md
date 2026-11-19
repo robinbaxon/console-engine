@@ -15,12 +15,12 @@ The Presentation group draws in `Add` order, each layer over the last:
 | 4 | `ElevatorRenderSystem` | Shaft walls and braces, cable, car, speed lines | The shaft column (and the cells beside it), over terrain |
 | 5 | `CampRenderSystem` | The deep camp once bought: tent `/▀\` (dark yellow, dark-grey door), flickering lantern `¤` on a pole, `CAMP` plank, crate | Columns 22–24, rows 109–110 |
 | 6 | `DynamiteRenderSystem` | Planted sticks: red `¡` with a `*` fuse flickering yellow/red above it | The stick's tile, in the dark too |
-| 7 | `ParticleRenderSystem` | Every particle glyph, except on the miner's cells | Over the world, keeping its background |
+| 7 | `ParticleRenderSystem` | Every particle glyph, except on the miner's cells; in 24-bit colour mist and gas as see-through tints ([Blended overlays](#blended-overlays)) | Over the world, keeping its background |
 | 8 | `MinerRenderSystem` | The 4 × 2 miner and the lamp glow (a jump draws him up to 2 cells higher, in an arc) | Over the world and the particles |
 | 9 | `FloatingTextRenderSystem` | `+150g` / `-10g` / `ELEVATOR +10m` / `OIL +40` / `GAS!` / `BLACK DAMP` | Over everything so far |
-| 10 | `PromptRenderSystem` | The door prompt, the counter panels (surface and deep camp), the lift sign and landing prompts, the dynamite hints | Above the miner |
+| 10 | `PromptRenderSystem` | The door prompt, the counter panels (surface and deep camp), the lift sign and landing prompts, the dynamite hints; see-through in 24-bit colour | Above the miner |
 | 11 | `HudSystem` | The two top rows | Screen rows 0–1 |
-| 12 | `InventorySystem` | The `TAB` inventory panel, 60 × 20, double frame, yellow on dark blue | The middle of the screen, over everything, while open |
+| 12 | `InventorySystem` | The `TAB` inventory panel, 60 × 20, double frame, yellow on dark blue (see-through deep navy in 24-bit colour) | The middle of the screen, over everything, while open |
 
 Layers 1 and 2 together paint every cell of the screen each frame. That matters for the `Canvas`.
 
@@ -31,7 +31,8 @@ in front of the house or a coin against the sky would each punch a black (or wro
 and the engine has no public way to read a cell's colour back.
 
 `Rendering/Canvas.cs` wraps the `RenderConsole` and keeps the background of every screen cell: a `ConsoleColor[]`
-for palette cells and a `uint[]` for 24-bit cells.
+for palette cells and a `uint[]` for 24-bit cells. It also keeps each cell's character and its foreground as 24-bit
+colour (a palette colour as `Rgb.Of`), so an overlay can blend into the cell ([Blended overlays](#blended-overlays)).
 
 | Method | Does |
 |---|---|
@@ -39,7 +40,11 @@ for palette cells and a `uint[]` for 24-bit cells.
 | `DrawRgb(x, y, char, fgRgb, bgRgb)` | Draws in 24-bit colour (`0xRRGGBB`) and records `bgRgb`. Clips to the screen |
 | `Draw(x, y, ReadOnlySpan<char>, fg, bg)` | The same as `Draw` for text |
 | `DrawOver(x, y, char, fg)` | Draws a character with the background **already recorded** at that cell; over a 24-bit cell the `ConsoleColor` foreground is drawn as its RGB (`Rgb.Of`) on that 24-bit background |
+| `Tint(x, y, rgb, alpha)` | Lays `rgb` over the cell with opacity `alpha`: keeps the character, blends foreground and background towards it (`Rgb.Mix`). 24-bit only; does nothing off-screen or at `alpha` ≤ 0 |
+| `DrawGlass(x, y, char, fgRgb, fillRgb, alpha)` | Draws a character on the recorded background blended towards `fillRgb` by `alpha`: a see-through panel cell |
+| `DrawPanel(x, y, char, fg, PanelFill)` | A panel cell: `Draw` on `PanelFill.Color` in the 16 colours (exactly as before), `DrawGlass` with `PanelFill.Rgb`/`Alpha` while `IsTrueColor` |
 | `BackgroundAt(x, y)` | The last palette background drawn there (black off-screen, and black for a 24-bit cell) |
+| `BackgroundRgbAt(x, y)`, `ForegroundRgbAt(x, y)` | The cell's colours as 24-bit colour, palette or not (black off-screen) |
 | `IsTrueColor` | `RenderConsole.TrueColorActive`: whether to draw the 24-bit look this frame |
 
 Because the sky and the terrain cover every cell each frame, the recorded backgrounds are always this frame's. Rule
@@ -162,8 +167,12 @@ characters, specks, cracks and their noise stay the same; the colours come from 
 - **Ore specks:** `TileShade.Speck` lights them with 35% white plus 65% of the tile's light (`SpeckFloor`), so a lit
   vein always stands out.
 - **Cracks:** black on a fill lit 45% or more (`LightCrackBelow`), light grey on darker rock (`TileShade.Crack`).
-- **Black damp edge:** the `░`, dark grey scaled by the light, on black.
-- **Dark, seen before:** `░` in cool grey `TileShade.Remembered` (`0x4A4E57`) on black; never seen: black.
+- **Black damp:** lit rock beside it (`Mine.IsBlackDampEdge`) keeps its texture but is choked: texture and fill
+  `TileShade.Choked` (75% grey, `ChokedGrey`, at 45% brightness, `ChokedBrightness`); ore specks still show at full
+  colour. The back wall of a lit black-damp tile (`Mine.IsBlackDamp`) is choked the same way. No `░` edge in 24-bit.
+- **Dark, seen before:** `░` in a faint memory of the tile's own texture colour (`TileShade.Memory`: 60% grey,
+  `MemoryGrey`, at 50% brightness, `MemoryBrightness`) on black, so dirt is remembered brown and slate blue. Never the
+  speck colour, so ore stays hidden. Never seen: black.
 - **Air:** the cave's back wall `TileShade.BackWall` (`0x40342A`, warm brown) as the background, scaled by the light;
   the 12% `·` dots in `BackWallDot`. Black in the dark.
 - **Ladders:** `╟──╢` in yellow scaled by the light (at least 40%, `LadderFloor`) on the back wall; when dark but seen
@@ -172,8 +181,31 @@ characters, specks, cracks and their noise stay the same; the colours come from 
   background under them.
 
 Without 24-bit colour (an old console, a terminal without it, or `C` pressed) everything is drawn as in the tables
-above. Frame cost in a real console has **not been measured**: smooth tiles change colour about every 4 cells, which is
+above, and the overlays below fall back to their glyphs and solid fills. Frame cost in a real console has **not been measured**: smooth tiles change colour about every 4 cells, which is
 the cheap case for VT output (AGENTS.md § Performance), but the whole terrain changes while the miner moves.
+
+### Blended overlays
+
+In 24-bit colour some overlays blend into the scene the `Canvas` has recorded instead of covering it:
+
+| Overlay | 24-bit | 16 colours |
+|---|---|---|
+| Mist (`ParticleStyle.Mist`) | `Canvas.Tint` with pale grey `ParticleLooks.MistTint` (`0xB4C0C8`) on the particle's cell and at half strength on its left and right neighbours; opacity `ParticleLooks.TintAlpha`: `MistPeakAlpha` (0.3) × 4p(1 − p) over its life, so it fades in and out | The dark-grey `·∙˙` glyph |
+| Gas shimmer (`ParticleStyle.GasShimmer`) | The same with green `GasTint` (`0x5CD040`), peak `GasPeakAlpha` (0.4); in the dark too, where it tints black | The dark-green `~∙` glyph |
+| Prompt boxes, counter panels, `TAB` inventory | `Canvas.DrawPanel` with `PanelFill.Prompt`: the scene blended 80% towards deep navy `0x0A1636`, frame and text drawn on it | Solid dark blue fill |
+| Black damp, remembered rock | Choked and remembered colours ([24-bit terrain](#24-bit-terrain)) | `░` in dark grey |
+
+- A tint keeps the character under it and blends both its colours, so a lit tile behind mist keeps its texture.
+  Tints add up where puffs overlap. `ParticleLooks.IsTint` says which styles are tints.
+- Near the miner a tint counts towards `NearMinerCap` like a glyph and is half as strong; no tint cell is drawn on his
+  4 × 2 cells.
+- Each panel cell is drawn exactly once (`InventorySystem` draws `PAUSED` in the bottom frame row instead of over it):
+  drawing a see-through fill twice would darken that cell. The title tab and `TAB close` stay solid yellow.
+- **Speed:** a tint changes the colour of at most three cells per particle (at most 40 mist and 30 gas particles), and
+  a panel keeps the colour changes the scene behind it already has, so neither adds per-cell colour noise
+  (AGENTS.md § Performance, 24-bit table).
+- **No vignette:** softening the edge of the lamp light cell by cell would give neighbouring cells different colours
+  all over the lit area, the slow case for conhost. The light already falls off smoothly per tile (`LightMap.Intensity`).
 
 ## Sky and surface
 
@@ -270,7 +302,8 @@ flowchart LR
   else (a ceiling) stops them where they were.
 - **`ParticleLifetimeSystem`:** ages each particle and rewrites its `Glyph` from `ParticleLooks.Character` and
   `ParticleLooks.Color` for its `Progress` (age / lifetime); destroys it at the end of its life.
-- **`ParticleRenderSystem`:** draws each glyph with `Canvas.DrawOver`. Dust and mist are skipped on `Dark` tiles;
+- **`ParticleRenderSystem`:** draws each glyph with `Canvas.DrawOver` (in 24-bit colour mist and gas shimmer as tints
+  instead, [Blended overlays](#blended-overlays)). Dust and mist are skipped on `Dark` tiles;
   debris, sparks, coins and glints show everywhere. Nothing is drawn on the miner's cells, and the ring around him
   is capped and dimmed ([Keeping him readable](#the-miner)).
 
@@ -282,7 +315,7 @@ flowchart LR
 | `Dust` | `▓ ▒ ░ ░ ·` | Grey, then dark grey |
 | `Spark` | `* + ·` | Yellow, then dark yellow |
 | `Glint` | `· + ✦ ✦ + ·` | White at the peak; magenta (gem), yellow (gold), cyan (silver), dark yellow (copper) at the ends |
-| `Mist` | One of `· ∙ · · ˙` | Dark grey |
+| `Mist` | One of `· ∙ · · ˙` (24-bit: a pale tint) | Dark grey |
 | `Coin` | Spins `● ◐ \| ◑` | Yellow, dark yellow on the edge frame |
 | `Pop` | `✶ * + ·` | White, then dark yellow |
 | `Trail` | `' ·` | Grey, then dark grey |

@@ -3,6 +3,7 @@ using ConsoleEngine.Ecs;
 using ConsoleEngine.Ecs.Components;
 using ConsoleEngine.Ecs.Rendering;
 using EternalDigger.Components;
+using EternalDigger.Effects;
 using EternalDigger.Rendering;
 
 namespace EternalDigger.Systems;
@@ -11,7 +12,10 @@ namespace EternalDigger.Systems;
 /// Draws particle glyphs over the world, keeping each cell's background. Dust and mist only show where light falls;
 /// debris, sparks, coins and glints show everywhere (glints are how ore is spotted in the dark). The miner stays
 /// readable: nothing is drawn on his 4 x 2 cells, and within one tile around him at most <see cref="NearMinerCap"/>
-/// particles are drawn, in their darker colour, so his face and lamp stay the brightest characters there.
+/// particles are drawn, in their darker colour, so his face and lamp stay the brightest characters there. In 24-bit
+/// colour (<see cref="Canvas.IsTrueColor"/>) mist and gas shimmer (<see cref="ParticleLooks.IsTint"/>) are not glyphs
+/// but see-through tints over three cells in a row (<see cref="Canvas.Tint"/>), fading in and out with their life; near
+/// the miner a tint is half as strong, and never on his cells.
 /// </summary>
 public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap light) : EntitySystem
 {
@@ -40,6 +44,7 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
         var cameraPosition = camera.Position;
         var miner = MinerScreenCell(out var hasMiner);
         var nearMiner = 0;
+        var trueColor = canvas.IsTrueColor;
         foreach (var chunk in _particles.GetChunks())
         {
             var particles = chunk.GetSpan<Particle>();
@@ -53,12 +58,15 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
 
                 var x = (int)MathF.Floor(world.X - cameraPosition.X);
                 var y = (int)MathF.Floor(world.Y - cameraPosition.Y);
+                var style = particles[i].Style;
+                var tint = trueColor && ParticleLooks.IsTint(style);
                 var color = glyphs[i].Foreground;
+                var near = false;
                 if (hasMiner)
                 {
                     var dx = x - miner.X;
                     var dy = y - miner.Y;
-                    if (IsOnMiner(dx, dy))
+                    if (!tint && IsOnMiner(dx, dy))
                         continue;
 
                     if (IsNearMiner(dx, dy))
@@ -67,10 +75,14 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
                             continue;
 
                         color = Dim(color);
+                        near = true;
                     }
                 }
 
-                canvas.DrawOver(x, y, glyphs[i].Character, color);
+                if (tint)
+                    DrawTint(x, y, style, particles[i].Progress, near, miner, hasMiner);
+                else
+                    canvas.DrawOver(x, y, glyphs[i].Character, color);
             }
         }
     }
@@ -93,6 +105,24 @@ public sealed class ParticleRenderSystem(Canvas canvas, Camera camera, LightMap 
     //**********************************************************
     //** internals
     //**********************************************************
+
+    /// <summary>
+    /// A tint particle: its colour over its cell at full strength and its left and right neighbours at half, skipping
+    /// the miner's cells. Half as strong in the ring around the miner.
+    /// </summary>
+    private void DrawTint(int x, int y, ParticleStyle style, float progress, bool nearMiner, (int X, int Y) miner,
+        bool hasMiner)
+    {
+        var alpha = ParticleLooks.TintAlpha(style, progress) * (nearMiner ? .5f : 1f);
+        var color = ParticleLooks.TintColor(style);
+        for (var dx = -1; dx <= 1; dx++)
+        {
+            if (hasMiner && IsOnMiner(x + dx - miner.X, y - miner.Y))
+                continue;
+
+            canvas.Tint(x + dx, y, color, dx == 0 ? alpha : alpha * .5f);
+        }
+    }
 
     private static bool NeedsLight(ParticleStyle style) => style is ParticleStyle.Dust or ParticleStyle.Mist;
 

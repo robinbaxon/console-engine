@@ -31,6 +31,18 @@ public static class ParticleLooks
     private const string GasRamp = "~∙~·";
     private const string FlareRamp = "✶**+·";
 
+    /// <summary>Mist as a 24-bit tint (<see cref="TintColor"/>): a pale cool grey.</summary>
+    public const uint MistTint = 0xB4C0C8;
+
+    /// <summary>Gas shimmer as a 24-bit tint: a sickly green.</summary>
+    public const uint GasTint = 0x5CD040;
+
+    /// <summary>The opacity of a mist tint at the middle of its life.</summary>
+    public const float MistPeakAlpha = .3f;
+
+    /// <summary>The opacity of a gas tint at the middle of its life.</summary>
+    public const float GasPeakAlpha = .4f;
+
     //**********************************************************
     //** public methods
     //**********************************************************
@@ -95,6 +107,36 @@ public static class ParticleLooks
     /// </summary>
     public static Glyph GlyphAt(ParticleStyle style, byte variant, float progress) =>
         new(Character(style, variant, progress), Color(style, variant, progress));
+
+    /// <summary>
+    /// Whether a style is drawn as a see-through tint over the cells (<c>Canvas.Tint</c>) instead of a glyph in 24-bit
+    /// colour: mist and gas shimmer.
+    /// </summary>
+    public static bool IsTint(ParticleStyle style) => style is ParticleStyle.Mist or ParticleStyle.GasShimmer;
+
+    /// <summary>The colour of a tint style (<see cref="IsTint"/>); black for any other style.</summary>
+    public static uint TintColor(ParticleStyle style) => style switch
+    {
+        ParticleStyle.Mist => MistTint,
+        ParticleStyle.GasShimmer => GasTint,
+        _ => 0
+    };
+
+    /// <summary>
+    /// The opacity of a tint style at a point in its life: it fades in, peaks halfway and fades out
+    /// (<c>peak × 4p(1 − p)</c>), so a puff never pops in or out. 0 for any other style.
+    /// </summary>
+    public static float TintAlpha(ParticleStyle style, float progress)
+    {
+        var peak = style switch
+        {
+            ParticleStyle.Mist => MistPeakAlpha,
+            ParticleStyle.GasShimmer => GasPeakAlpha,
+            _ => 0f
+        };
+        var p = Math.Clamp(progress, 0f, 1f);
+        return peak * 4f * p * (1f - p);
+    }
 
     /// <summary>The debris style for a tile type: the colour of the chunks that fly off it.</summary>
     public static ParticleStyle DebrisStyle(TileType type) => type switch

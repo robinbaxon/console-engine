@@ -229,7 +229,7 @@ means: add it to `SaveData`, write it in `SaveFile.Write`, bump `SaveFile.Versio
 
 | Missing in the engine | Workaround in the game |
 |---|---|
-| Reading a cell back (only `GetCharAt`, no colours) | `Canvas` remembers every background it draws, so effects can keep it (`DrawOver`) |
+| Reading a cell back (only `GetCharAt`, no colours) | `Canvas` remembers every cell's colours and character it draws, so effects can keep the background (`DrawOver`) or blend into it in 24-bit colour (`Tint`, `DrawGlass`) |
 | Shared ECS resources/singletons | Services passed through system constructors |
 | A testable input source (`Input.Instance` is static and needs a real console) | `MinerInput` snapshot; `MinerControlSystem.Control` and `MinerMotionSystem.Move` are public and take the input and command buffer as arguments |
 | Glyph rendering that keeps the background | `ParticleRenderSystem` draws through `Canvas.DrawOver` |

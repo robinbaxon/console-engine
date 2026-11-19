@@ -62,7 +62,7 @@ The only other persistent inputs are the TerraForM map files ([§ Map file forma
 | `Headlamp` (one per `MineScene`) | `Reach`, `IsDimmed`, `IsLow`, `IsEmpty` | This frame's lamp, from the oil and lamp tier | Every frame (`LampSystem`) |
 | `Miner` component | `IsRiding`, `ClimbStreak` | In the lift car; tiles climbed up without letting go | Rescue, getting out / any non-climb action |
 | `LightMap` | `_levels` (byte per tile on screen), `_intensities` (float, 24-bit shading), `_colors` (`Vector3` light colour per tile), `FirstRow`, `Rows` | This frame's light | Recomputed every frame |
-| `Canvas` | `_backgrounds` (`ConsoleColor` per cell), `_backgroundRgb` (`0xRRGGBB` with bit 24 set for a 24-bit cell, 0 for a palette cell) | The background last drawn per cell, for `DrawOver` | Rewritten every frame by sky and terrain |
+| `Canvas` | `_backgrounds` (`ConsoleColor` per cell), `_backgroundRgb` (`0xRRGGBB` with bit 24 set for a 24-bit cell, 0 for a palette cell), `_foregroundRgb` (each cell's foreground as `0xRRGGBB`), `_characters` | What was last drawn per cell, for `DrawOver` and the 24-bit blends (`Tint`, `DrawGlass`) | Rewritten every frame by sky and terrain |
 | Particles | `Particle` (`Age`, `Lifetime`, `Style`, `Variant`), `Physics`, `TileCollider`/`Mist` tags, `FloatingText` + engine `Position`/`Velocity`/`Glyph` | Effects only, no game state | Destroyed when `Age >= Lifetime` |
 
 <a id="eternal-digger-save"></a>
